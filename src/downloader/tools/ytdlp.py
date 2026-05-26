@@ -15,7 +15,7 @@ from pathlib import Path
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import Format, MediaInfo, ProgressEvent
-from downloader.tools.base import resolve_binary, terminate_if_alive
+from downloader.tools.base import BinaryNotFound, resolve_binary, terminate_if_alive
 
 # Пример строки прогресса (с --newline):
 # [download]  23.4% of   10.00MiB at    2.00MiB/s ETA 00:03
@@ -132,6 +132,13 @@ async def download(
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     stem = name if name else "%(title)s"
+    # yt-dlp нужен ffmpeg для склейки/ремукса (HLS, merge видео+аудио). Наш
+    # ffmpeg из static-ffmpeg не на PATH — указываем каталог явно.
+    ffmpeg_loc: list[str] = []
+    try:
+        ffmpeg_loc = ["--ffmpeg-location", str(Path(resolve_binary("ffmpeg")).parent)]
+    except BinaryNotFound:
+        pass
     args = [
         *_base_args(),
         "-f",
@@ -143,6 +150,7 @@ async def download(
         "--embed-metadata",
         "--embed-thumbnail",
         "--no-simulate",
+        *ffmpeg_loc,
         "--print",
         "after_move:filepath",
         url,
