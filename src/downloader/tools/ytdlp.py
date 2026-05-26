@@ -15,7 +15,7 @@ from pathlib import Path
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import Format, MediaInfo, ProgressEvent
-from downloader.tools.base import resolve_binary
+from downloader.tools.base import resolve_binary, terminate_if_alive
 
 # Пример строки прогресса (с --newline):
 # [download]  23.4% of   10.00MiB at    2.00MiB/s ETA 00:03
@@ -151,22 +151,24 @@ async def download(
     assert proc.stdout is not None
     final_path: Path | None = None
     tail: list[str] = []
-    async for raw in proc.stdout:
-        line = raw.decode(errors="replace").strip()
-        if not line:
-            continue
-        tail.append(line)
-        del tail[:-20]
-        event = parse_progress(line, job_id)
-        if event:
-            on_progress(event)
-        elif not line.startswith("["):
-            # Строка от --print after_move:filepath — путь итогового файла.
-            candidate = Path(line)
-            if candidate.exists():
-                final_path = candidate
-
-    code = await proc.wait()
+    try:
+        async for raw in proc.stdout:
+            line = raw.decode(errors="replace").strip()
+            if not line:
+                continue
+            tail.append(line)
+            del tail[:-20]
+            event = parse_progress(line, job_id)
+            if event:
+                on_progress(event)
+            elif not line.startswith("["):
+                # Строка от --print after_move:filepath — путь итогового файла.
+                candidate = Path(line)
+                if candidate.exists():
+                    final_path = candidate
+        code = await proc.wait()
+    finally:
+        terminate_if_alive(proc)  # отмена/Ctrl-C — гасим дочерний yt-dlp
     if code != 0:
         raise RuntimeError(f"yt-dlp вышел с кодом {code}:\n" + "\n".join(tail[-5:]))
     return final_path

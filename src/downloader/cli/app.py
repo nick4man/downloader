@@ -13,7 +13,7 @@ from downloader import __version__
 from downloader.cli import render
 from downloader.config import load_config
 from downloader.core.engine import Engine
-from downloader.models import DownloadJob, DownloadKind, ProgressEvent
+from downloader.models import DownloadJob, DownloadKind, JobState, ProgressEvent
 from downloader.services.formats import select_format
 from downloader.services.resolver import classify
 from downloader.store import jobs_repo
@@ -27,14 +27,6 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
-
-# Команды, ещё не реализованные на текущей фазе.
-_PLANNED: dict[str, str] = {
-    "status": "Phase 4",
-    "pause": "Phase 4",
-    "resume": "Phase 4",
-    "rm": "Phase 4",
-}
 
 
 @app.command()
@@ -115,7 +107,14 @@ async def _formats(url: str) -> None:
 @app.command()
 def run() -> None:
     """Запустить движок и обработать очередь."""
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        # Состояние running-задач останется в БД; следующий `dl run` их докачает.
+        console.print(
+            "\n[yellow]Прервано. Состояние сохранено — повторите 'dl run' для докачки.[/yellow]"
+        )
+        raise typer.Exit(130) from None
 
 
 async def _run() -> None:
@@ -160,33 +159,100 @@ async def _list() -> list[DownloadJob]:
         await conn.close()
 
 
-def _planned(name: str) -> None:
-    console.print(f"[yellow]Команда '{name}' появится в {_PLANNED[name]}.[/yellow]")
-    raise typer.Exit(code=1)
+async def _resolve_job(conn, job_id: str) -> DownloadJob:
+    """Найти задачу по полному id или однозначному префиксу (как в `dl list`)."""
+    job = await jobs_repo.get_job(conn, job_id)
+    if job is not None:
+        return job
+    matches = [j for j in await jobs_repo.list_jobs(conn) if j.id.startswith(job_id)]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        console.print(f"[red]Задача '{job_id}' не найдена.[/red]")
+    else:
+        ids = ", ".join(j.id[:8] for j in matches)
+        console.print(f"[red]Префикс '{job_id}' неоднозначен: {ids}[/red]")
+    raise typer.Exit(1)
 
 
 @app.command()
 def status(job_id: str | None = typer.Argument(None)) -> None:
-    """Показать статус задачи (или всех)."""
-    _planned("status")
+    """Показать статус одной задачи или всех."""
+    asyncio.run(_status(job_id))
+
+
+async def _status(job_id: str | None) -> None:
+    conn = await connect()
+    try:
+        if job_id is None:
+            jobs = await jobs_repo.list_jobs(conn)
+            console.print(render.jobs_table(jobs) if jobs else "[dim]Задач нет.[/dim]")
+            return
+        job = await _resolve_job(conn, job_id)
+        console.print(render.jobs_table([job]))
+        if job.error:
+            console.print(f"[red]Ошибка:[/red] {job.error}")
+    finally:
+        await conn.close()
 
 
 @app.command()
 def pause(job_id: str) -> None:
-    """Поставить задачу на паузу."""
-    _planned("pause")
+    """Поставить задачу на паузу (движок будет её пропускать)."""
+    asyncio.run(_set_state(job_id, JobState.PAUSED, allowed_from={JobState.QUEUED, JobState.ERROR}))
 
 
 @app.command()
 def resume(job_id: str) -> None:
-    """Возобновить задачу."""
-    _planned("resume")
+    """Вернуть задачу в очередь."""
+    asyncio.run(
+        _set_state(
+            job_id,
+            JobState.QUEUED,
+            allowed_from={JobState.PAUSED, JobState.ERROR, JobState.CANCELED},
+        )
+    )
+
+
+async def _set_state(job_id: str, target: JobState, *, allowed_from: set[JobState]) -> None:
+    conn = await connect()
+    try:
+        job = await _resolve_job(conn, job_id)
+        if job.state not in allowed_from:
+            console.print(
+                f"[yellow]Нельзя перевести из '{job.state.value}' в '{target.value}'.[/yellow]"
+            )
+            raise typer.Exit(1)
+        await jobs_repo.set_state(conn, job.id, target)
+    finally:
+        await conn.close()
+    console.print(f"[green]{job.id[:8]} → {target.value}[/green]")
 
 
 @app.command()
 def rm(job_id: str) -> None:
-    """Удалить задачу из очереди."""
-    _planned("rm")
+    """Удалить задачу из очереди (с незавершёнными артефактами .part/.aria2)."""
+    asyncio.run(_rm(job_id))
+
+
+async def _rm(job_id: str) -> None:
+    conn = await connect()
+    try:
+        job = await _resolve_job(conn, job_id)
+        await jobs_repo.delete_job(conn, job.id)
+    finally:
+        await conn.close()
+    _cleanup_partials(job)
+    console.print(f"[green]Удалено: {job.id[:8]}[/green]")
+
+
+def _cleanup_partials(job: DownloadJob) -> None:
+    """Снести незавершённые артефакты закачки (готовый файл не трогаем)."""
+    if not job.filename:
+        return
+    target = Path(job.dest_dir) / job.filename
+    for suffix in (".part", ".aria2"):
+        target.with_suffix(target.suffix + suffix).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import shutil
 import sys
 
@@ -86,3 +88,15 @@ def have_binary(name: str) -> bool:
         return True
     except BinaryNotFound:
         return False
+
+
+def terminate_if_alive(proc: asyncio.subprocess.Process) -> None:
+    """Послать SIGTERM процессу, если он ещё жив (для отмены/Ctrl-C).
+
+    Вызывается из `finally` обёрток: при нормальном завершении returncode уже
+    выставлен и мы ничего не делаем; при отмене корутины — гасим дочерний
+    процесс, чтобы не оставлять «сирот» (aria2 на SIGTERM сохранит .aria2).
+    """
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()

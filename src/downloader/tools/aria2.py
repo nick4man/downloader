@@ -12,7 +12,7 @@ from pathlib import Path
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import ProgressEvent
-from downloader.tools.base import resolve_binary
+from downloader.tools.base import resolve_binary, terminate_if_alive
 
 # Пример строки прогресса:
 # [#0a3f8e 4.5MiB/19MiB(23%) CN:5 DL:2.3MiB ETA:6s]
@@ -119,14 +119,16 @@ async def download(
     )
     assert proc.stdout is not None
     tail: list[str] = []
-    async for line in _iter_lines(proc.stdout):
-        tail.append(line)
-        del tail[:-20]  # держим только хвост для диагностики ошибок
-        event = parse_progress(line, job_id)
-        if event:
-            on_progress(event)
-
-    code = await proc.wait()
+    try:
+        async for line in _iter_lines(proc.stdout):
+            tail.append(line)
+            del tail[:-20]  # держим только хвост для диагностики ошибок
+            event = parse_progress(line, job_id)
+            if event:
+                on_progress(event)
+        code = await proc.wait()
+    finally:
+        terminate_if_alive(proc)  # отмена/Ctrl-C — не оставляем сирот (.aria2 сохранится)
     if code != 0:
         raise RuntimeError(f"aria2c вышел с кодом {code}:\n" + "\n".join(tail[-5:]))
     return dest_dir / filename

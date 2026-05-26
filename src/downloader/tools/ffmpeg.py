@@ -14,7 +14,7 @@ from pathlib import Path
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import ProgressEvent
-from downloader.tools.base import resolve_binary
+from downloader.tools.base import resolve_binary, terminate_if_alive
 
 
 async def probe(source: str) -> dict:
@@ -81,22 +81,25 @@ async def _run(
         *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     assert proc.stdout is not None
-    async for raw in proc.stdout:
-        line = raw.decode(errors="replace").strip()
-        # ffmpeg -progress отдаёт строки key=value; нас интересует out_time_us.
-        if line.startswith("out_time_us=") and total:
-            us = line.split("=", 1)[1]
-            if us.isdigit():
-                done = int(us) / 1_000_000  # секунды
-                on_progress(
-                    ProgressEvent(
-                        job_id=job_id,
-                        bytes_done=int(done),
-                        bytes_total=int(total),
-                        percent=min(100.0, 100 * done / total),
+    try:
+        async for raw in proc.stdout:
+            line = raw.decode(errors="replace").strip()
+            # ffmpeg -progress отдаёт строки key=value; нас интересует out_time_us.
+            if line.startswith("out_time_us=") and total:
+                us = line.split("=", 1)[1]
+                if us.isdigit():
+                    done = int(us) / 1_000_000  # секунды
+                    on_progress(
+                        ProgressEvent(
+                            job_id=job_id,
+                            bytes_done=int(done),
+                            bytes_total=int(total),
+                            percent=min(100.0, 100 * done / total),
+                        )
                     )
-                )
-    code = await proc.wait()
+        code = await proc.wait()
+    finally:
+        terminate_if_alive(proc)  # отмена/Ctrl-C — гасим дочерний ffmpeg
     if code != 0:
         err = (await proc.stderr.read()).decode(errors="replace")[:400] if proc.stderr else ""
         raise RuntimeError(f"ffmpeg вышел с кодом {code}: {err}")

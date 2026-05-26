@@ -26,12 +26,13 @@ class Engine:
         self._sem = asyncio.Semaphore(config.max_concurrent)
 
     async def run_pending(self, ui_progress: ProgressCallback = noop_progress) -> int:
-        """Обработать все queued/paused/running задачи. Вернуть их количество."""
-        # Прерванные ранее running-задачи считаем возобновляемыми.
+        """Обработать все queued-задачи. Вернуть их количество.
+
+        Прерванные ранее running-задачи возобновляем (reset → queued).
+        Явно поставленные на паузу (paused) пропускаем — их вернёт `dl resume`.
+        """
         await self._reset_stale_running()
-        jobs = await jobs_repo.list_jobs(
-            self.conn, [JobState.QUEUED, JobState.PAUSED, JobState.RUNNING]
-        )
+        jobs = await jobs_repo.list_jobs(self.conn, [JobState.QUEUED])
         if not jobs:
             return 0
         await asyncio.gather(*(self._run_one(j.id, ui_progress) for j in jobs))
