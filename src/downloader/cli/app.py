@@ -255,5 +255,32 @@ def _cleanup_partials(job: DownloadJob) -> None:
         target.with_suffix(target.suffix + suffix).unlink(missing_ok=True)
 
 
+@app.command()
+def dedup() -> None:
+    """Найти завершённые задачи с одинаковым содержимым (по SHA256)."""
+    asyncio.run(_dedup())
+
+
+async def _dedup() -> None:
+    conn = await connect()
+    try:
+        jobs = [j for j in await jobs_repo.list_jobs(conn) if j.sha256]
+    finally:
+        await conn.close()
+
+    groups: dict[str, list[DownloadJob]] = {}
+    for job in jobs:
+        groups.setdefault(job.sha256 or "", []).append(job)
+    dups = {sha: js for sha, js in groups.items() if len(js) > 1}
+
+    if not dups:
+        console.print("[dim]Дубликатов не найдено.[/dim]")
+        return
+    for sha, js in dups.items():
+        console.print(f"[yellow]{sha[:12]}…[/yellow] — копий: {len(js)}")
+        for job in js:
+            console.print(f"  {job.id[:8]}  {job.filename or '—'}  [dim]{job.url}[/dim]")
+
+
 if __name__ == "__main__":
     app()

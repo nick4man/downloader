@@ -10,6 +10,7 @@ import aiosqlite
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import DownloadJob, DownloadKind, Engine, JobState, ProgressEvent
+from downloader.services import dedup
 from downloader.services.naming import filename_from_url
 from downloader.services.resolver import choose_engine, classify
 from downloader.store import jobs_repo
@@ -103,6 +104,8 @@ async def run_job(
     final = Path(job.dest_dir) / job.filename if job.filename else None
     if final and final.exists():
         job.bytes_total = job.bytes_done = final.stat().st_size
+        # Контент-хэш для дедупа (дубликаты распознаются по общему sha256).
+        job.sha256, _ = await dedup.register(conn, final)
     elif job.bytes_total:
         job.bytes_done = job.bytes_total
     await jobs_repo.update_job(conn, job)
