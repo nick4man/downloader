@@ -16,6 +16,7 @@ from downloader.core.engine import Engine
 from downloader.models import DownloadJob, DownloadKind, JobState, ProgressEvent
 from downloader.services.formats import select_format
 from downloader.services.resolver import classify
+from downloader.services.scrape import extract_urls
 from downloader.store import jobs_repo
 from downloader.store.db import connect
 from downloader.tools import ytdlp
@@ -253,6 +254,48 @@ def _cleanup_partials(job: DownloadJob) -> None:
     target = Path(job.dest_dir) / job.filename
     for suffix in (".part", ".aria2"):
         target.with_suffix(target.suffix + suffix).unlink(missing_ok=True)
+
+
+@app.command(name="import")
+def import_urls(
+    file: str,
+    dir: str | None = typer.Option(None, "--dir", "-d", help="Каталог сохранения"),
+    quality: int | None = typer.Option(
+        None, "--quality", "-q", help="Качество для медиа-ссылок, напр. 720"
+    ),
+) -> None:
+    """Импортировать ссылки из файла (список/текст/HTML) в очередь."""
+    asyncio.run(_import(file, dir, quality))
+
+
+async def _import(file: str, dir: str | None, quality: int | None) -> None:
+    path = Path(file).expanduser()
+    if not path.is_file():
+        console.print(f"[red]Файл не найден: {file}[/red]")
+        raise typer.Exit(1)
+
+    urls = extract_urls(path.read_text(encoding="utf-8", errors="replace"))
+    if not urls:
+        console.print("[yellow]URL в файле не найдены.[/yellow]")
+        return
+
+    config = load_config()
+    dest = str(Path(dir or config.download_dir).expanduser())
+    default_q = quality or config.default_quality
+    conn = await connect()
+    try:
+        existing = {j.url for j in await jobs_repo.list_jobs(conn)}
+        added = 0
+        for url in urls:
+            if url in existing:  # уже в очереди — пропускаем
+                continue
+            kind = classify(url)
+            fmt = select_format(default_q) if kind is DownloadKind.MEDIA else None
+            await jobs_repo.add_job(conn, DownloadJob(url=url, dest_dir=dest, kind=kind, fmt=fmt))
+            added += 1
+    finally:
+        await conn.close()
+    console.print(f"[green]Добавлено {added}[/green] из {len(urls)} (дубли пропущены).")
 
 
 @app.command()
