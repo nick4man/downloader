@@ -100,6 +100,12 @@ async def download(
         "--console-log-level=warn",
         "--allow-overwrite=true",
         "--auto-file-renaming=false",
+        # Устойчивость к зависающим соединениям (full-tunnel VPN и пр.):
+        "--max-tries=5",
+        "--retry-wait=2",
+        "--connect-timeout=15",
+        "--timeout=30",
+        "--lowest-speed-limit=1K",  # зависшее соединение сбросить и пересоздать
         "-d",
         str(dest_dir),
         "-o",
