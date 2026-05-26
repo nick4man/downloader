@@ -10,8 +10,8 @@ import aiosqlite
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import DownloadJob, DownloadKind, Engine, JobState, ProgressEvent
-from downloader.services import dedup
-from downloader.services.naming import filename_from_url
+from downloader.services import dedup, sites
+from downloader.services.naming import filename_from_url, sanitize_filename
 from downloader.services.resolver import choose_engine, classify
 from downloader.store import jobs_repo
 from downloader.tools import aria2, ffmpeg, http_downloader, ytdlp
@@ -56,12 +56,21 @@ async def run_job(
     result: Path | None = None
     try:
         if job.engine is Engine.YTDLP:
+            # Сайт-плагин: для поддерживаемых сайтов достаём реальный источник
+            # (HLS-мастер → топ-качество) и заголовок; иначе качаем как есть.
+            resolved = await sites.resolve_source(job.url)
+            if resolved:
+                src, title = resolved
+                name = sanitize_filename(title) if title else None
+            else:
+                src, name = job.url, None
             result = await ytdlp.download(
-                job.url,
+                src,
                 job.dest_dir,
                 job.fmt or "best",
                 on_progress,
                 job_id=job.id,
+                name=name,
             )
         elif job.engine is Engine.FFMPEG:
             result = await ffmpeg.hls_to_mp4(

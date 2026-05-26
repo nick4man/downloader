@@ -120,20 +120,24 @@ async def download(
     on_progress: ProgressCallback = noop_progress,
     *,
     job_id: str = "",
+    name: str | None = None,
 ) -> Path | None:
     """Скачать медиа через yt-dlp с выбранным форматом и метаданными.
 
+    `name` задаёт имя файла (без расширения); если не задан — берётся из
+    `%(title)s` (нужно, когда качаем сырой m3u8, где заголовка нет).
     Возвращает путь к итоговому файлу (через `--print after_move:filepath`)
     или None, если путь не удалось определить.
     """
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
+    stem = name if name else "%(title)s"
     args = [
         *_base_args(),
         "-f",
         fmt,
         "-o",
-        str(dest_dir / "%(title)s.%(ext)s"),
+        str(dest_dir / f"{stem}.%(ext)s"),
         "--newline",
         "--no-warnings",
         "--embed-metadata",
