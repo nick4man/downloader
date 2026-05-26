@@ -13,7 +13,7 @@ from downloader.models import DownloadJob, DownloadKind, Engine, JobState, Progr
 from downloader.services.naming import filename_from_url
 from downloader.services.resolver import choose_engine, classify
 from downloader.store import jobs_repo
-from downloader.tools import aria2, http_downloader, ytdlp
+from downloader.tools import aria2, ffmpeg, http_downloader, ytdlp
 
 _PERSIST_INTERVAL = 1.0  # как часто сбрасывать bytes_done в БД, сек
 
@@ -59,6 +59,14 @@ async def run_job(
                 job.url,
                 job.dest_dir,
                 job.fmt or "best",
+                on_progress,
+                job_id=job.id,
+            )
+        elif job.engine is Engine.FFMPEG:
+            result = await ffmpeg.hls_to_mp4(
+                job.url,
+                job.dest_dir,
+                job.filename or "video",
                 on_progress,
                 job_id=job.id,
             )
