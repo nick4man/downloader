@@ -9,11 +9,11 @@ from pathlib import Path
 import aiosqlite
 
 from downloader.core.events import ProgressCallback, noop_progress
-from downloader.models import DownloadJob, Engine, JobState, ProgressEvent
+from downloader.models import DownloadJob, DownloadKind, Engine, JobState, ProgressEvent
 from downloader.services.naming import filename_from_url
 from downloader.services.resolver import choose_engine, classify
 from downloader.store import jobs_repo
-from downloader.tools import aria2, http_downloader
+from downloader.tools import aria2, http_downloader, ytdlp
 
 _PERSIST_INTERVAL = 1.0  # как часто сбрасывать bytes_done в БД, сек
 
@@ -30,7 +30,8 @@ async def run_job(
     if job.engine is None:
         job.kind = classify(job.url)
         job.engine = choose_engine(job.kind)
-    if not job.filename:
+    # Для медиа имя файла определит yt-dlp по шаблону; для прямых — берём из URL.
+    if not job.filename and job.kind is not DownloadKind.MEDIA:
         job.filename = filename_from_url(job.url)
 
     job.state = JobState.RUNNING
@@ -51,21 +52,30 @@ async def run_job(
             # Сброс прогресса в БД — fire-and-forget, чтобы не тормозить чтение потока.
             asyncio.create_task(jobs_repo.update_job(conn, job.model_copy()))
 
+    result: Path | None = None
     try:
-        if job.engine is Engine.ARIA2:
-            await aria2.download(
+        if job.engine is Engine.YTDLP:
+            result = await ytdlp.download(
                 job.url,
                 job.dest_dir,
-                job.filename,
+                job.fmt or "best",
+                on_progress,
+                job_id=job.id,
+            )
+        elif job.engine is Engine.ARIA2:
+            result = await aria2.download(
+                job.url,
+                job.dest_dir,
+                job.filename or "download",
                 on_progress,
                 connections=connections,
                 job_id=job.id,
             )
         else:  # Engine.HTTP — фолбэк
-            await http_downloader.download(
+            result = await http_downloader.download(
                 job.url,
                 job.dest_dir,
-                job.filename,
+                job.filename or "download",
                 on_progress,
                 job_id=job.id,
             )
@@ -75,11 +85,15 @@ async def run_job(
         await jobs_repo.update_job(conn, job)
         return
 
+    # yt-dlp сам именует файл — подхватываем реальное имя из вернувшегося пути.
+    if result is not None:
+        job.filename = result.name
+
     # Итоговый размер берём из ФС — это надёжнее, чем распарсенный прогресс
     # (парсер может промахнуться, особенно на быстрых закачках).
     job.state = JobState.COMPLETED
-    final = Path(job.dest_dir) / job.filename
-    if final.exists():
+    final = Path(job.dest_dir) / job.filename if job.filename else None
+    if final and final.exists():
         job.bytes_total = job.bytes_done = final.stat().st_size
     elif job.bytes_total:
         job.bytes_done = job.bytes_total

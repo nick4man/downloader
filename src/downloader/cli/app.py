@@ -13,9 +13,12 @@ from downloader import __version__
 from downloader.cli import render
 from downloader.config import load_config
 from downloader.core.engine import Engine
-from downloader.models import DownloadJob, ProgressEvent
+from downloader.models import DownloadJob, DownloadKind, ProgressEvent
+from downloader.services.formats import select_format
+from downloader.services.resolver import classify
 from downloader.store import jobs_repo
 from downloader.store.db import connect
+from downloader.tools import ytdlp
 from downloader.tools.base import have_binary
 
 app = typer.Typer(
@@ -71,21 +74,42 @@ def doctor() -> None:
 def add(
     url: str,
     dir: str | None = typer.Option(None, "--dir", "-d", help="Каталог сохранения"),
+    quality: int | None = typer.Option(
+        None, "--quality", "-q", help="Желаемое качество видео, напр. 720 (для медиа)"
+    ),
 ) -> None:
     """Добавить ссылку в очередь закачки."""
-    asyncio.run(_add(url, dir))
+    asyncio.run(_add(url, dir, quality))
 
 
-async def _add(url: str, dir: str | None) -> None:
+async def _add(url: str, dir: str | None, quality: int | None) -> None:
     config = load_config()
     dest = dir or config.download_dir
-    job = DownloadJob(url=url, dest_dir=str(Path(dest).expanduser()))
+    kind = classify(url)
+    # Для медиа сразу фиксируем -f селектор по желаемому качеству; для прямых не нужно.
+    fmt = select_format(quality or config.default_quality) if kind is DownloadKind.MEDIA else None
+    job = DownloadJob(url=url, dest_dir=str(Path(dest).expanduser()), kind=kind, fmt=fmt)
     conn = await connect()
     try:
         await jobs_repo.add_job(conn, job)
     finally:
         await conn.close()
-    console.print(f"Добавлено: [dim]{job.id[:8]}[/dim] → {url}")
+    console.print(f"Добавлено: [dim]{job.id[:8]}[/dim] ({kind.value}) → {url}")
+
+
+@app.command()
+def formats(url: str) -> None:
+    """Показать доступные форматы медиа-ссылки (yt-dlp -J)."""
+    asyncio.run(_formats(url))
+
+
+async def _formats(url: str) -> None:
+    try:
+        media = await ytdlp.probe(url)
+    except Exception as exc:  # noqa: BLE001 — показываем понятную ошибку, не трейсбек
+        console.print(f"[red]Не удалось получить форматы: {exc}[/red]")
+        raise typer.Exit(1) from None
+    console.print(render.formats_table(media))
 
 
 @app.command()

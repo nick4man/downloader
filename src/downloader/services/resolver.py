@@ -1,23 +1,50 @@
 """Классификация ссылок и выбор загрузчика.
 
-Phase 1: распознаём только прямые файлы (direct) и выбираем движок
-aria2 (если доступен) или http-фолбэк. Распознавание media/HLS — в Phase 2/3.
+Эвристика (без сетевых запросов):
+- `.m3u8` → HLS (ffmpeg);
+- известное файловое расширение → DIRECT (aria2/http);
+- хост из медиа-allowlist → MEDIA (yt-dlp);
+- иначе → DIRECT (безопасный дефолт; прямые ссылки без расширения работают).
 """
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 from downloader.models import DownloadKind, Engine
 from downloader.tools.base import have_binary
 
+# Расширения, означающие прямой файл (архивы, образы, документы, медиа-контейнеры).
+_DIRECT_EXTS = {
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz",
+    ".iso", ".img", ".dmg", ".exe", ".msi", ".deb", ".rpm", ".apk", ".appimage",
+    ".pdf", ".epub", ".mobi",
+    ".mp3", ".flac", ".wav", ".ogg", ".m4a",
+    ".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".wmv",
+    ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ".bin", ".dat",
+}  # fmt: skip
+
+# Хосты, которые качаем через yt-dlp (подстрока хоста). Список легко расширять.
+_MEDIA_HOSTS = (
+    "youtube.com", "youtu.be", "vimeo.com", "twitch.tv", "tiktok.com",
+    "instagram.com", "facebook.com", "twitter.com", "x.com",
+    "soundcloud.com", "dailymotion.com", "rutube.ru", "vk.com",
+)  # fmt: skip
+
 
 def classify(url: str) -> DownloadKind:
     """Определить тип ссылки."""
-    path = urlparse(url).path.lower()
+    parsed = urlparse(url)
+    path = parsed.path.lower()
     if path.endswith(".m3u8"):
         return DownloadKind.HLS
-    # Эвристика media/direct уточнится в Phase 2 (через yt-dlp probe).
+    if PurePosixPath(path).suffix in _DIRECT_EXTS:
+        return DownloadKind.DIRECT
+    host = parsed.hostname or ""
+    if any(h in host for h in _MEDIA_HOSTS):
+        return DownloadKind.MEDIA
     return DownloadKind.DIRECT
 
 

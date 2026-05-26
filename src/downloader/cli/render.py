@@ -12,7 +12,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from downloader.models import DownloadJob, JobState
+from downloader.models import DownloadJob, JobState, MediaInfo
 
 _STATE_STYLE = {
     JobState.QUEUED: "cyan",
@@ -63,3 +63,33 @@ def _progress_str(job: DownloadJob) -> str:
     if job.bytes_done:
         return f"{job.bytes_done} B"
     return "—"
+
+
+def _human_size(num: int) -> str:
+    """Человекочитаемый размер в бинарных единицах."""
+    size = float(num)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if size < 1024 or unit == "TiB":
+            return f"{size:.0f}{unit}" if unit == "B" else f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{num}B"
+
+
+def formats_table(media: MediaInfo) -> Table:
+    """Таблица доступных форматов для `dl formats`."""
+    table = Table(title=media.title or media.url)
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("EXT")
+    table.add_column("Разрешение", justify="right")
+    table.add_column("Видео")
+    table.add_column("Аудио")
+    table.add_column("Размер", justify="right")
+    table.add_column("Прим.")
+
+    for f in media.formats:
+        res = f"{f.height}p" if f.height else "—"
+        size = _human_size(f.filesize) if f.filesize else "—"
+        table.add_row(
+            f.format_id, f.ext or "—", res, f.vcodec or "—", f.acodec or "—", size, f.note or ""
+        )
+    return table
