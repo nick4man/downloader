@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 
 import aiosqlite
 
@@ -74,7 +75,12 @@ async def run_job(
         await jobs_repo.update_job(conn, job)
         return
 
+    # Итоговый размер берём из ФС — это надёжнее, чем распарсенный прогресс
+    # (парсер может промахнуться, особенно на быстрых закачках).
     job.state = JobState.COMPLETED
-    if job.bytes_total:
+    final = Path(job.dest_dir) / job.filename
+    if final.exists():
+        job.bytes_total = job.bytes_done = final.stat().st_size
+    elif job.bytes_total:
         job.bytes_done = job.bytes_total
     await jobs_repo.update_job(conn, job)
