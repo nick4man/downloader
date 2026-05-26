@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git config *)",
+      "Bash(cd '\\\\\\\\wsl.localhost\\\\Debian\\\\home\\\\q\\\\downloader')",
+      "Bash(printf '\\\\nCLAUDE.local.md\\\\n')",
+      "Bash(printf 'CLAUDE.local.md\\\\n')",
+      "Bash(command -v ruff)",
+      "Bash(command -v python3)",
+      "Bash(command -v python)",
+      "Bash(pipx install *)",
+      "Bash(ruff --version)",
+      "Skill(update-config)",
+      "Bash(python3 .claude/hooks/ruff_format.py)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/ruff_format.py\" 2>/dev/null || true",
+            "statusMessage": "ruff format"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+# Ruff config — линтер и форматтер для проекта.
+# Документация: https://docs.astral.sh/ruff/
+line-length = 100
+target-version = "py311"
+
+[lint]
+# E/F — pyflakes+pycodestyle, I — сортировка импортов, UP — pyupgrade,
+# B — bugbear, SIM — упрощения.
+select = ["E", "F", "I", "UP", "B", "SIM"]
