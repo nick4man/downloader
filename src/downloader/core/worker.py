@@ -64,6 +64,9 @@ async def run_job(
                 name = sanitize_filename(title) if title else None
             else:
                 src, name = job.url, None
+            if name:  # показать имя в `dl list`/строке состояния уже во время закачки
+                job.filename = name
+                await jobs_repo.update_job(conn, job)
             result = await ytdlp.download(
                 src,
                 job.dest_dir,

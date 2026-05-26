@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import shutil
 import sys
 
@@ -88,6 +89,28 @@ def have_binary(name: str) -> bool:
         return True
     except BinaryNotFound:
         return False
+
+
+async def iter_lines(stream: asyncio.StreamReader):
+    r"""Отдавать «логические» строки вывода, разделённые \r или \n.
+
+    Инструменты (aria2, yt-dlp) перерисовывают прогресс возвратом каретки (\r)
+    без перевода строки, поэтому построчное чтение по \n не отдавало бы
+    обновления до конца процесса. Читаем чанками и режем по обоим разделителям.
+    """
+    buf = ""
+    while True:
+        chunk = await stream.read(4096)
+        if not chunk:
+            break
+        buf += chunk.decode(errors="replace")
+        parts = re.split(r"[\r\n]+", buf)
+        buf = parts.pop()  # последний фрагмент может быть неполным — копим дальше
+        for part in parts:
+            if part.strip():
+                yield part.strip()
+    if buf.strip():
+        yield buf.strip()
 
 
 def terminate_if_alive(proc: asyncio.subprocess.Process) -> None:

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import shlex
@@ -15,7 +16,12 @@ from pathlib import Path
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import Format, MediaInfo, ProgressEvent
-from downloader.tools.base import BinaryNotFound, resolve_binary, terminate_if_alive
+from downloader.tools.base import (
+    BinaryNotFound,
+    iter_lines,
+    resolve_binary,
+    terminate_if_alive,
+)
 
 # Пример строки прогресса (с --newline):
 # [download]  23.4% of   10.00MiB at    2.00MiB/s ETA 00:03
@@ -27,6 +33,12 @@ _PROGRESS = re.compile(
 )
 _UNITS = {"B": 1, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
 _UNITS.update({"KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4})
+
+# Шаблон машинного прогресса: 'DLPROG <скачано> <всего|оценка>'.
+_PROGRESS_TEMPLATE = (
+    "DLPROG %(progress.downloaded_bytes)s "
+    "%(progress.total_bytes,progress.total_bytes_estimate)s"
+)
 
 
 def _to_bytes(num: str, unit: str) -> int:
@@ -58,6 +70,31 @@ def parse_progress(line: str, job_id: str = "") -> ProgressEvent | None:
         percent=pct,
         speed=_to_bytes(m["spd"], m["su"]) if m["spd"] else None,
         eta=_parse_eta(m["eta"]),
+    )
+
+
+def _to_int(value: str) -> int | None:
+    """'1024' / '132.0' → int; 'NA'/мусор → None (total_bytes_estimate float)."""
+    try:
+        return int(float(value))
+    except ValueError:
+        return None
+
+
+def _parse_dlprog(line: str, job_id: str = "") -> ProgressEvent | None:
+    """Разобрать машинную строку `DLPROG <done> <total>` от --progress-template."""
+    parts = line.split()
+    if len(parts) < 3:
+        return None
+    done = _to_int(parts[1])
+    if done is None:
+        return None
+    total = _to_int(parts[2])
+    return ProgressEvent(
+        job_id=job_id,
+        bytes_done=done,
+        bytes_total=total,
+        percent=(100 * done / total) if total else None,
     )
 
 
@@ -135,10 +172,8 @@ async def download(
     # yt-dlp нужен ffmpeg для склейки/ремукса (HLS, merge видео+аудио). Наш
     # ffmpeg из static-ffmpeg не на PATH — указываем каталог явно.
     ffmpeg_loc: list[str] = []
-    try:
+    with contextlib.suppress(BinaryNotFound):
         ffmpeg_loc = ["--ffmpeg-location", str(Path(resolve_binary("ffmpeg")).parent)]
-    except BinaryNotFound:
-        pass
     args = [
         *_base_args(),
         "-f",
@@ -147,6 +182,12 @@ async def download(
         str(dest_dir / f"{stem}.%(ext)s"),
         "--newline",
         "--no-warnings",
+        # Нативный HLS-загрузчик yt-dlp шлёт пофрагментный прогресс (иначе HLS
+        # качает молча через ffmpeg, и прогресса нет до самого конца).
+        "--hls-prefer-native",
+        # Машинно-читаемый прогресс — надёжнее, чем парсить [download] %.
+        "--progress-template",
+        _PROGRESS_TEMPLATE,
         "--embed-metadata",
         "--embed-thumbnail",
         "--no-simulate",
@@ -164,15 +205,13 @@ async def download(
     final_path: Path | None = None
     tail: list[str] = []
     try:
-        async for raw in proc.stdout:
-            line = raw.decode(errors="replace").strip()
-            if not line:
-                continue
+        async for line in iter_lines(proc.stdout):
             tail.append(line)
             del tail[:-20]
-            event = parse_progress(line, job_id)
-            if event:
-                on_progress(event)
+            if line.startswith("DLPROG "):
+                event = _parse_dlprog(line, job_id)
+                if event:
+                    on_progress(event)
             elif not line.startswith("["):
                 # Строка от --print after_move:filepath — путь итогового файла.
                 candidate = Path(line)

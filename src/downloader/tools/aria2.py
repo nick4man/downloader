@@ -12,7 +12,7 @@ from pathlib import Path
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import ProgressEvent
-from downloader.tools.base import resolve_binary, terminate_if_alive
+from downloader.tools.base import iter_lines, resolve_binary, terminate_if_alive
 
 # Пример строки прогресса:
 # [#0a3f8e 4.5MiB/19MiB(23%) CN:5 DL:2.3MiB ETA:6s]
@@ -39,28 +39,6 @@ def _parse_eta(raw: str | None) -> float | None:
         return None
     h, mn, s = (int(g) if g else 0 for g in m.groups())
     return h * 3600 + mn * 60 + s
-
-
-async def _iter_lines(stream: asyncio.StreamReader):
-    r"""Отдавать «логические» строки aria2, разделённые \r или \n.
-
-    aria2 перерисовывает строку прогресса возвратом каретки (\r) без перевода
-    строки, поэтому построчное чтение по \n не отдавало бы обновления до конца
-    процесса. Читаем чанками и режем по обоим разделителям.
-    """
-    buf = ""
-    while True:
-        chunk = await stream.read(4096)
-        if not chunk:
-            break
-        buf += chunk.decode(errors="replace")
-        parts = re.split(r"[\r\n]+", buf)
-        buf = parts.pop()  # последний фрагмент может быть неполным — копим дальше
-        for part in parts:
-            if part.strip():
-                yield part.strip()
-    if buf.strip():
-        yield buf.strip()
 
 
 def parse_progress(line: str, job_id: str = "") -> ProgressEvent | None:
@@ -120,7 +98,7 @@ async def download(
     assert proc.stdout is not None
     tail: list[str] = []
     try:
-        async for line in _iter_lines(proc.stdout):
+        async for line in iter_lines(proc.stdout):
             tail.append(line)
             del tail[:-20]  # держим только хвост для диагностики ошибок
             event = parse_progress(line, job_id)
