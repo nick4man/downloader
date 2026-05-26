@@ -212,8 +212,10 @@ async def download(
                 event = _parse_dlprog(line, job_id)
                 if event:
                     on_progress(event)
-            elif not line.startswith("["):
-                # Строка от --print after_move:filepath — путь итогового файла.
+            elif line.startswith("/"):
+                # Строка от --print after_move:filepath — абсолютный путь файла.
+                # Проверяем только абсолютные пути: иначе длинная строка ERROR
+                # на Path(line).exists() кидает OSError «File name too long».
                 candidate = Path(line)
                 if candidate.exists():
                     final_path = candidate
