@@ -182,6 +182,13 @@ async def download(
         str(dest_dir / f"{stem}.%(ext)s"),
         "--newline",
         "--no-warnings",
+        # Устойчивость к флапающему CDN/VPN: ретраи фрагментов и таймаут сокета.
+        "--retries",
+        "10",
+        "--fragment-retries",
+        "10",
+        "--socket-timeout",
+        "30",
         # Нативный HLS-загрузчик yt-dlp шлёт пофрагментный прогресс (иначе HLS
         # качает молча через ffmpeg, и прогресса нет до самого конца).
         "--hls-prefer-native",
