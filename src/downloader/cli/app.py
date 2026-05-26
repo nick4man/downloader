@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from downloader import __version__
+from downloader.cli import render
+from downloader.config import load_config
+from downloader.core.engine import Engine
+from downloader.models import DownloadJob, ProgressEvent
+from downloader.store import jobs_repo
+from downloader.store.db import connect
 from downloader.tools.base import have_binary
 
 app = typer.Typer(
@@ -16,12 +25,8 @@ app = typer.Typer(
 )
 console = Console()
 
-# Команды, ещё не реализованные на текущей фазе. Регистрируем заранее,
-# чтобы поверхность CLI была видна в `--help`.
+# Команды, ещё не реализованные на текущей фазе.
 _PLANNED: dict[str, str] = {
-    "add": "Phase 1",
-    "run": "Phase 1",
-    "list": "Phase 1",
     "status": "Phase 4",
     "pause": "Phase 4",
     "resume": "Phase 4",
@@ -52,37 +57,88 @@ def doctor() -> None:
     for name, note, required in checks:
         ok = have_binary(name)
         if ok:
-            status = "[green]✓ найден[/green]"
+            status_text = "[green]✓ найден[/green]"
         elif required:
-            status = "[red]✗ нет[/red]"
+            status_text = "[red]✗ нет[/red]"
         else:
-            status = "[yellow]— нет (фолбэк)[/yellow]"
-        table.add_row(name, status, note)
+            status_text = "[yellow]— нет (фолбэк)[/yellow]"
+        table.add_row(name, status_text, note)
 
     console.print(table)
 
 
-def _planned(name: str) -> None:
-    console.print(f"[yellow]Команда '{name}' появится в {_PLANNED[name]}.[/yellow]")
-    raise typer.Exit(code=1)
-
-
 @app.command()
-def add(url: str) -> None:
+def add(
+    url: str,
+    dir: str | None = typer.Option(None, "--dir", "-d", help="Каталог сохранения"),
+) -> None:
     """Добавить ссылку в очередь закачки."""
-    _planned("add")
+    asyncio.run(_add(url, dir))
+
+
+async def _add(url: str, dir: str | None) -> None:
+    config = load_config()
+    dest = dir or config.download_dir
+    job = DownloadJob(url=url, dest_dir=str(Path(dest).expanduser()))
+    conn = await connect()
+    try:
+        await jobs_repo.add_job(conn, job)
+    finally:
+        await conn.close()
+    console.print(f"Добавлено: [dim]{job.id[:8]}[/dim] → {url}")
 
 
 @app.command()
 def run() -> None:
     """Запустить движок и обработать очередь."""
-    _planned("run")
+    asyncio.run(_run())
+
+
+async def _run() -> None:
+    config = load_config()
+    conn = await connect()
+    try:
+        engine = Engine(conn, config)
+        progress = render.make_progress()
+        tasks: dict[str, int] = {}
+
+        def ui(ev: ProgressEvent) -> None:
+            if ev.job_id not in tasks:
+                tasks[ev.job_id] = progress.add_task(ev.job_id[:8], total=ev.bytes_total)
+            progress.update(tasks[ev.job_id], completed=ev.bytes_done, total=ev.bytes_total)
+
+        with progress:
+            count = await engine.run_pending(ui)
+    finally:
+        await conn.close()
+
+    if count == 0:
+        console.print("[dim]Очередь пуста.[/dim]")
+    else:
+        console.print(f"[green]Обработано задач: {count}[/green]")
 
 
 @app.command(name="list")
 def list_jobs() -> None:
     """Показать задачи в очереди."""
-    _planned("list")
+    jobs = asyncio.run(_list())
+    if not jobs:
+        console.print("[dim]Задач нет.[/dim]")
+        return
+    console.print(render.jobs_table(jobs))
+
+
+async def _list() -> list[DownloadJob]:
+    conn = await connect()
+    try:
+        return await jobs_repo.list_jobs(conn)
+    finally:
+        await conn.close()
+
+
+def _planned(name: str) -> None:
+    console.print(f"[yellow]Команда '{name}' появится в {_PLANNED[name]}.[/yellow]")
+    raise typer.Exit(code=1)
 
 
 @app.command()
