@@ -9,8 +9,15 @@ import aiosqlite
 from downloader.config import Config
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.core.worker import run_job
-from downloader.models import JobState
+from downloader.models import DownloadJob, JobState, ProgressEvent
 from downloader.store import jobs_repo
+
+
+def _label(job: DownloadJob) -> str:
+    """Короткая подпись задачи для строки состояния."""
+    if job.filename:
+        return job.filename
+    return job.url if len(job.url) <= 60 else "…" + job.url[-57:]
 
 
 class Engine:
@@ -43,6 +50,8 @@ class Engine:
             job = await jobs_repo.get_job(self.conn, job_id)
             if job is None:
                 return
+            # Сразу показываем строку состояния (до первого байтового события).
+            ui_progress(ProgressEvent(job_id=job.id, msg=_label(job)))
             await run_job(self.conn, job, ui_progress, connections=self.config.connections)
 
     async def _reset_stale_running(self) -> None:

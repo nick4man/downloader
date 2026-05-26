@@ -48,3 +48,20 @@ async def test_run_pending_skips_paused_and_resumes_stale(conn, monkeypatch) -> 
     # Пауза сохранилась нетронутой.
     reloaded = await jobs_repo.get_job(conn, paused.id)
     assert reloaded is not None and reloaded.state is JobState.PAUSED
+
+
+async def test_emits_start_event_for_status_line(conn, monkeypatch) -> None:
+    events: list = []
+
+    async def fake_run_job(c, job, ui, *, connections=16):
+        await jobs_repo.set_state(c, job.id, JobState.COMPLETED)
+
+    monkeypatch.setattr("downloader.core.engine.run_job", fake_run_job)
+    job = DownloadJob(url="https://e.com/clip", dest_dir="/tmp", state=JobState.QUEUED)
+    await jobs_repo.add_job(conn, job)
+
+    await Engine(conn, Config()).run_pending(events.append)
+
+    # До любых байтов движок шлёт стартовое событие с подписью — это и есть
+    # строка состояния, появляющаяся сразу.
+    assert any(ev.job_id == job.id and ev.msg for ev in events)

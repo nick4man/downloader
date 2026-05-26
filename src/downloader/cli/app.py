@@ -106,10 +106,14 @@ async def _formats(url: str) -> None:
 
 
 @app.command()
-def run() -> None:
+def run(
+    quiet: bool = typer.Option(
+        False, "--quiet", "-Q", help="Без живого прогресса — только итог (для скриптов/фона)"
+    ),
+) -> None:
     """Запустить движок и обработать очередь."""
     try:
-        asyncio.run(_run())
+        asyncio.run(_run(quiet))
     except KeyboardInterrupt:
         # Состояние running-задач останется в БД; следующий `dl run` их докачает.
         console.print(
@@ -118,21 +122,12 @@ def run() -> None:
         raise typer.Exit(130) from None
 
 
-async def _run() -> None:
+async def _run(quiet: bool) -> None:
     config = load_config()
     conn = await connect()
     try:
         engine = Engine(conn, config)
-        progress = render.make_progress()
-        tasks: dict[str, int] = {}
-
-        def ui(ev: ProgressEvent) -> None:
-            if ev.job_id not in tasks:
-                tasks[ev.job_id] = progress.add_task(ev.job_id[:8], total=ev.bytes_total)
-            progress.update(tasks[ev.job_id], completed=ev.bytes_done, total=ev.bytes_total)
-
-        with progress:
-            count = await engine.run_pending(ui)
+        count = await (engine.run_pending() if quiet else _run_with_progress(engine))
     finally:
         await conn.close()
 
@@ -140,6 +135,24 @@ async def _run() -> None:
         console.print("[dim]Очередь пуста.[/dim]")
     else:
         console.print(f"[green]Обработано задач: {count}[/green]")
+
+
+async def _run_with_progress(engine: Engine) -> int:
+    """Прогон очереди с живым rich-прогрессом (строка появляется сразу)."""
+    progress = render.make_progress()
+    tasks: dict[str, int] = {}
+
+    def ui(ev: ProgressEvent) -> None:
+        task_id = tasks.get(ev.job_id)
+        if task_id is None:
+            task_id = progress.add_task(ev.msg or ev.job_id[:8], total=ev.bytes_total)
+            tasks[ev.job_id] = task_id
+        if ev.msg:  # описание несут только стартовые события, байтовые — нет
+            progress.update(task_id, description=ev.msg)
+        progress.update(task_id, completed=ev.bytes_done, total=ev.bytes_total)
+
+    with progress:
+        return await engine.run_pending(ui)
 
 
 @app.command(name="list")
