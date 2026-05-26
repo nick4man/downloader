@@ -3,8 +3,8 @@
 Эвристика (без сетевых запросов):
 - `.m3u8` → HLS (ffmpeg);
 - известное файловое расширение → DIRECT (aria2/http);
-- хост из медиа-allowlist → MEDIA (yt-dlp);
-- иначе → DIRECT (безопасный дефолт; прямые ссылки без расширения работают).
+- иначе → MEDIA (yt-dlp): для менеджера видео логичнее доверять yt-dlp с его
+  generic- и сотнями сайтовых экстракторов, чем считать страницу прямым файлом.
 """
 
 from __future__ import annotations
@@ -26,26 +26,16 @@ _DIRECT_EXTS = {
     ".bin", ".dat",
 }  # fmt: skip
 
-# Хосты, которые качаем через yt-dlp (подстрока хоста). Список легко расширять.
-_MEDIA_HOSTS = (
-    "youtube.com", "youtu.be", "vimeo.com", "twitch.tv", "tiktok.com",
-    "instagram.com", "facebook.com", "twitter.com", "x.com",
-    "soundcloud.com", "dailymotion.com", "rutube.ru", "vk.com",
-)  # fmt: skip
-
 
 def classify(url: str) -> DownloadKind:
     """Определить тип ссылки."""
-    parsed = urlparse(url)
-    path = parsed.path.lower()
+    path = urlparse(url).path.lower()
     if path.endswith(".m3u8"):
         return DownloadKind.HLS
     if PurePosixPath(path).suffix in _DIRECT_EXTS:
         return DownloadKind.DIRECT
-    host = parsed.hostname or ""
-    if any(h in host for h in _MEDIA_HOSTS):
-        return DownloadKind.MEDIA
-    return DownloadKind.DIRECT
+    # Прямые файлы отсеяны по расширению выше — остальное отдаём yt-dlp.
+    return DownloadKind.MEDIA
 
 
 def choose_engine(kind: DownloadKind) -> Engine:

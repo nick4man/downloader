@@ -11,17 +11,17 @@ def test_classify() -> None:
     assert classify("https://e.com/file.zip") is DownloadKind.DIRECT
 
 
-def test_classify_media_hosts() -> None:
+def test_classify_media_pages() -> None:
+    # Любая страница без файлового расширения → MEDIA (доверяем yt-dlp).
     assert classify("https://www.youtube.com/watch?v=abc") is DownloadKind.MEDIA
     assert classify("https://youtu.be/abc") is DownloadKind.MEDIA
-    assert classify("https://vimeo.com/12345") is DownloadKind.MEDIA
+    assert classify("https://some-tube.example/video.xyz123/title") is DownloadKind.MEDIA
 
 
-def test_classify_defaults_to_direct() -> None:
-    # Ссылка без расширения и не с медиа-хоста — безопасный дефолт DIRECT.
-    assert classify("https://speed.cloudflare.com/__down?bytes=8000000") is DownloadKind.DIRECT
-    # Прямой медиа-файл по расширению — тоже DIRECT (качаем aria2, не yt-dlp).
+def test_classify_direct_by_extension() -> None:
+    # Прямой файл по расширению → DIRECT (качаем aria2/http, не yt-dlp).
     assert classify("https://cdn.example.com/video.mp4") is DownloadKind.DIRECT
+    assert classify("https://example.com/archive.zip") is DownloadKind.DIRECT
 
 
 def test_choose_engine_special() -> None:
