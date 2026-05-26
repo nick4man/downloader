@@ -1,1 +1,15 @@
 CLAUDE.local.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Инструменты
+.ruff_cache/
+.pytest_cache/
+
+# Артефакты закачек
+*.part
+*.aria2
