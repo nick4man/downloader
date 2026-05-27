@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Send to downloader",
+  "version": "1.0.0",
+  "description": "Правый клик по ссылке/видео/странице → отправить в downloader.",
+  "permissions": ["contextMenus", "storage"],
+  "host_permissions": [
+    "http://localhost:8765/*",
+    "http://127.0.0.1:8765/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Send to downloader" },
+  "options_ui": { "page": "options.html", "open_in_tab": false }
+}

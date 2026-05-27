@@ -32,6 +32,14 @@ def test_health(client) -> None:
     assert client.get("/health").json()["ok"] is True
 
 
+def test_cors_allows_cross_origin(client) -> None:
+    # Букмарклет/расширение шлют с чужого origin — нужен CORS-заголовок.
+    r = client.post(
+        "/jobs", json={"url": "https://e.com/f.zip"}, headers={"Origin": "https://youtube.com"}
+    )
+    assert r.headers.get("access-control-allow-origin") in ("*", "https://youtube.com")
+
+
 def test_reload(client) -> None:
     r = client.post("/reload").json()
     assert r["ok"] is True

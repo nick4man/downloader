@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Send to downloader — настройки</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 16px; width: 320px; }
+    label { font-size: 13px; color: #444; }
+    input { width: 100%; padding: 7px; margin: 6px 0 10px; box-sizing: border-box; }
+    button { padding: 7px 14px; }
+    #msg { margin-left: 8px; color: #16a34a; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <label>Адрес демона downloader:</label>
+  <input id="base" placeholder="http://127.0.0.1:8765">
+  <div>
+    <button id="save">Сохранить</button>
+    <span id="msg"></span>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

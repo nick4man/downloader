@@ -31,6 +31,9 @@ class Config(BaseModel):
     aria2_path: str | None = None  # None → автоопределение через shutil.which
     host: str = "127.0.0.1"  # адрес демона
     port: int = 8765  # порт демона
+    # Origin'ы, которым разрешён CORS (для букмарклета/расширения с чужих сайтов).
+    # '*' удобно для личного инструмента; ужесточай списком сайтов при необходимости.
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
     def dump_toml(self) -> str:
         """Сериализовать в TOML (без сторонних зависимостей)."""
@@ -40,6 +43,9 @@ class Config(BaseModel):
                 continue  # пропускаем незаданные опции
             if isinstance(value, str):
                 lines.append(f'{key} = "{value}"')
+            elif isinstance(value, list):
+                items = ", ".join(f'"{v}"' for v in value)
+                lines.append(f"{key} = [{items}]")
             else:
                 lines.append(f"{key} = {value}")
         return "\n".join(lines) + "\n"
@@ -60,6 +66,8 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
         config.port = int(port)
     if mc := os.environ.get("DOWNLOADER_MAX_CONCURRENT"):
         config.max_concurrent = int(mc)
+    if cors := os.environ.get("DOWNLOADER_CORS"):
+        config.cors_origins = [o.strip() for o in cors.split(",") if o.strip()]
     return config
 
 

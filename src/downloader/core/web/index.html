@@ -41,6 +41,14 @@
   </table>
   <div id="empty" class="empty" hidden>Очередь пуста. Добавь ссылку выше.</div>
 
+  <footer style="padding:12px 20px;color:#6b7280;font-size:13px;border-top:1px solid #23262d;">
+    Перетащи на панель закладок, чтобы слать текущую страницу одним кликом:
+    <a id="blet" href="#" style="color:#3b82f6;font-weight:600;">📎 В downloader</a>
+    <span style="margin-left:10px;">или поставь
+      <a href="https://github.com/nick4man/downloader/tree/main/extension" style="color:#3b82f6;">расширение</a>
+      (правый клик → отправить).</span>
+  </footer>
+
   <script>
     const fmt = n => {
       if (!n) return "—";
@@ -117,6 +125,14 @@
       ws.onclose = () => setTimeout(connectWS, 1000);  // переподключение
       ws.onerror = () => ws.close();
     }
+
+    // Букмарклет: шлёт текущую страницу на /jobs этого демона (origin берём свой).
+    document.getElementById("blet").href =
+      "javascript:(function(){fetch('" + location.origin +
+      "/jobs',{method:'POST',headers:{'Content-Type':'application/json'}," +
+      "body:JSON.stringify({url:location.href})}).then(function(r){" +
+      "alert(r.ok?'Отправлено в downloader':'Ошибка '+r.status)})" +
+      ".catch(function(e){alert('Не удалось: '+e)})})();";
 
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
     refresh();    // мгновенная первая отрисовка

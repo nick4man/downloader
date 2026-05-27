@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -63,6 +64,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="downloader daemon", version=__version__, lifespan=lifespan)
+
+# CORS — чтобы букмарклет/расширение могли слать URL с чужих сайтов (youtube и т.п.).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=load_config().cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _merge_live(job: DownloadJob, sched: Scheduler) -> DownloadJob:
