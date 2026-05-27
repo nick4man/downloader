@@ -171,6 +171,13 @@ def test_move_reorder(client) -> None:
     assert [j["id"] for j in client.get("/jobs").json()] == [c, a, b]
 
 
+def test_reorder_endpoint(client) -> None:
+    a = client.post("/jobs", json={"url": "https://e.com/a.zip"}).json()["id"]
+    b = client.post("/jobs", json={"url": "https://e.com/b.zip"}).json()["id"]
+    client.post("/jobs/reorder", json={"ids": [b, a]})  # drag-and-drop порядок
+    assert [j["id"] for j in client.get("/jobs").json()] == [b, a]
+
+
 def test_import_dedup_404(client) -> None:
     res = client.post("/jobs/import", json={"urls": ["https://a.com/1", "https://a.com/1"]}).json()
     assert res == {"added": 1, "total": 2}  # дубль в списке схлопнут

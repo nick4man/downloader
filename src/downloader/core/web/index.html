@@ -85,6 +85,7 @@
     };
 
     function render(jobs) {
+      if (window.__dragging) return;  // не перерисовываем во время перетаскивания
       const rows = document.getElementById("rows");
       document.getElementById("empty").hidden = jobs.length > 0;
       rows.innerHTML = jobs.map(j => {
@@ -94,7 +95,7 @@
           : (j.state === "completed" ? fmt(j.bytes_total || j.bytes_done) : "—");
         const canPause = j.state === "queued" || j.state === "running";
         const canResume = j.state === "paused" || j.state === "error";
-        return `<tr>
+        return `<tr draggable="true" data-id="${j.id}" style="cursor:grab">
           <td class="name" title="${j.url}">${j.audio ? "🎵 " : ""}${j.filename || "—"}<br><span class="url">${j.url}</span></td>
           <td><span class="state ${j.state}">${j.state}</span></td>
           <td>${bar}</td>
@@ -203,6 +204,30 @@
       ",body:JSON.stringify({url:location.href})}).then(function(r){" +
       "alert(r.ok?'Отправлено в downloader':'Ошибка '+r.status)})" +
       ".catch(function(e){alert('Не удалось: '+e)})})();";
+
+    // Drag-and-drop сортировка очереди (порядок шлём целиком на /jobs/reorder).
+    const rowsEl = document.getElementById("rows");
+    let draggedId = null;
+    rowsEl.addEventListener("dragstart", e => {
+      const tr = e.target.closest("tr");
+      if (tr) { draggedId = tr.dataset.id; window.__dragging = true; }
+    });
+    rowsEl.addEventListener("dragover", e => e.preventDefault());
+    rowsEl.addEventListener("dragend", () => { window.__dragging = false; });
+    rowsEl.addEventListener("drop", async e => {
+      e.preventDefault();
+      window.__dragging = false;
+      const tr = e.target.closest("tr");
+      if (!tr || !draggedId || tr.dataset.id === draggedId) return;
+      const ids = [...rowsEl.querySelectorAll("tr")].map(r => r.dataset.id);
+      ids.splice(ids.indexOf(tr.dataset.id), 0, ids.splice(ids.indexOf(draggedId), 1)[0]);
+      draggedId = null;
+      await fetch("/jobs/reorder", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      refresh();
+    });
 
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
     refresh();    // мгновенная первая отрисовка

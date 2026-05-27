@@ -58,6 +58,10 @@ class MoveRequest(BaseModel):
     direction: str  # "up" | "down"
 
 
+class ReorderRequest(BaseModel):
+    ids: list[str]  # полный новый порядок задач (для drag-and-drop)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config = load_config()
@@ -290,6 +294,13 @@ async def move_job(job_id: str, req: MoveRequest) -> list[DownloadJob]:
         ids[idx], ids[k] = ids[k], ids[idx]
         await jobs_repo.reorder(conn, ids)
     return [_merge_live(j, sched) for j in await jobs_repo.list_jobs(conn)]
+
+
+@app.post("/jobs/reorder")
+async def reorder_jobs(req: ReorderRequest) -> dict:
+    """Записать новый порядок очереди целиком (drag-and-drop)."""
+    await jobs_repo.reorder(app.state.conn, req.ids)
+    return {"ok": True}
 
 
 @app.post("/jobs/{job_id}/rename")
