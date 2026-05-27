@@ -212,6 +212,16 @@ async def dedup() -> list[dict]:
     ]
 
 
+@app.post("/reload")
+async def reload_config() -> dict:
+    """Перечитать config.toml на лету (download_dir/качество/connections для
+    новых задач). Размер пула воркеров меняется только через restart."""
+    cfg = load_config()
+    app.state.config = cfg
+    app.state.scheduler.config = cfg
+    return {"ok": True, "max_concurrent": cfg.max_concurrent}
+
+
 @app.post("/shutdown")
 async def shutdown() -> dict:
     app.state.scheduler.stop()

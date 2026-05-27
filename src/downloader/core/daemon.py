@@ -60,6 +60,12 @@ def start() -> int:
     return proc.pid
 
 
+def restart() -> int:
+    """Полный перезапуск демона (новый код, миграции, размер пула). Вернуть PID."""
+    stop()
+    return start()
+
+
 def stop(timeout: float = 10.0) -> bool:
     """Послать демону SIGTERM и дождаться выхода. False, если он не работал."""
     pid = is_running()

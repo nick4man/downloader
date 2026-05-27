@@ -32,6 +32,12 @@ def test_health(client) -> None:
     assert client.get("/health").json()["ok"] is True
 
 
+def test_reload(client) -> None:
+    r = client.post("/reload").json()
+    assert r["ok"] is True
+    assert "max_concurrent" in r
+
+
 def test_web_ui_served(client) -> None:
     r = client.get("/")
     assert r.status_code == 200

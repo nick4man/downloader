@@ -413,6 +413,30 @@ def daemon_stop() -> None:
         console.print("[dim]Демон не запущен.[/dim]")
 
 
+@daemon_app.command("restart")
+def daemon_restart() -> None:
+    """Перезапустить демон (новый код, миграции БД, размер пула воркеров)."""
+    pid = daemon_mod.restart()
+    if daemon_mod.is_running():
+        console.print(f"[green]Демон перезапущен[/green] (pid {pid}).")
+    else:
+        console.print(f"[red]Не удалось перезапустить.[/red] Лог: {daemon_mod.LOG_PATH}")
+        raise typer.Exit(1)
+
+
+@daemon_app.command("reload")
+def daemon_reload() -> None:
+    """Перечитать config.toml на лету (без остановки закачек)."""
+    if not api_client.is_up():
+        console.print("[dim]Демон не запущен.[/dim]")
+        raise typer.Exit(1)
+    res = _via_daemon(api_client.reload)
+    console.print(
+        f"[green]Конфиг перечитан.[/green] max_concurrent={res['max_concurrent']} "
+        "[dim](размер пула — после restart)[/dim]"
+    )
+
+
 @daemon_app.command("status")
 def daemon_status() -> None:
     """Показать, работает ли фоновый демон."""

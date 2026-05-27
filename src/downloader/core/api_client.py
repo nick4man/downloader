@@ -77,5 +77,9 @@ def dedup() -> list[dict]:
     return _request("GET", "/dedup")
 
 
+def reload() -> dict:
+    return _request("POST", "/reload")
+
+
 def shutdown() -> dict:
     return _request("POST", "/shutdown")
