@@ -32,6 +32,27 @@ def test_health(client) -> None:
     assert client.get("/health").json()["ok"] is True
 
 
+def test_auth_token_gates_api(monkeypatch) -> None:
+    monkeypatch.setenv("DOWNLOADER_TOKEN", "secret")
+
+    async def mem_connect(*_a, **_k):
+        return await connect(":memory:")
+
+    async def noop_run_job(conn, job, *_a, **_k):
+        await jobs_repo.set_state(conn, job.id, JobState.COMPLETED)
+
+    monkeypatch.setattr("downloader.core.api.connect", mem_connect)
+    monkeypatch.setattr("downloader.core.scheduler.run_job", noop_run_job)
+    from downloader.core.api import app
+
+    with TestClient(app) as c:
+        assert c.get("/health").status_code == 200  # публичный
+        assert c.get("/jobs").status_code == 401  # без токена — закрыто
+        ok = c.get("/jobs", headers={"Authorization": "Bearer secret"})
+        assert ok.status_code == 200
+        assert c.get("/jobs?token=secret").status_code == 200  # ?token → cookie
+
+
 def test_cors_allows_cross_origin(client) -> None:
     # Букмарклет/расширение шлют с чужого origin — нужен CORS-заголовок.
     r = client.post(

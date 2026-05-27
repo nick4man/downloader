@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from downloader import __version__
@@ -73,6 +73,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Публичная оболочка (грузится без токена); API за ней — под токеном.
+_PUBLIC_PATHS = {"/health", "/", "/manifest.webmanifest", "/sw.js", "/icon.svg"}
+
+
+def _supplied_token(request: Request) -> str | None:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return request.cookies.get("dl_token") or request.query_params.get("token")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    token = getattr(app.state, "config", None)
+    token = token.auth_token if token else None
+    # OPTIONS (CORS-preflight) и публичные пути — без токена.
+    if (
+        token
+        and request.method != "OPTIONS"
+        and request.url.path not in _PUBLIC_PATHS
+        and _supplied_token(request) != token
+    ):
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    response = await call_next(request)
+    # ?token=… в URL → ставим cookie, дальше морда/share работают прозрачно.
+    if token and request.query_params.get("token") == token:
+        response.set_cookie("dl_token", token, max_age=31_536_000, samesite="lax")
+    return response
 
 
 def _merge_live(job: DownloadJob, sched: Scheduler) -> DownloadJob:
@@ -149,6 +178,12 @@ async def health() -> dict:
 @app.websocket("/ws")
 async def ws_jobs(websocket: WebSocket) -> None:
     """Стрим состояния задач: push полного списка (с живым прогрессом) раз в 0.5с."""
+    token = app.state.config.auth_token
+    if token:
+        supplied = websocket.cookies.get("dl_token") or websocket.query_params.get("token")
+        if supplied != token:
+            await websocket.close(code=1008)  # policy violation
+            return
     await websocket.accept()
     conn, sched = app.state.conn, app.state.scheduler
     try:

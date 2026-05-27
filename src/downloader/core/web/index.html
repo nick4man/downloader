@@ -123,7 +123,16 @@
     }
 
     async function refresh() {
-      try { render(await (await fetch("/jobs")).json()); } catch {}
+      try {
+        const r = await fetch("/jobs");
+        if (r.status === 401) return askToken();
+        render(await r.json());
+      } catch {}
+    }
+
+    function askToken() {
+      const t = prompt("Токен доступа (DOWNLOADER_TOKEN):");
+      if (t) location.search = "?token=" + encodeURIComponent(t);  // → сервер ставит cookie
     }
 
     function connectWS() {
@@ -134,11 +143,17 @@
       ws.onerror = () => ws.close();
     }
 
-    // Букмарклет: шлёт текущую страницу на /jobs этого демона (origin берём свой).
+    // Букмарклет: шлёт текущую страницу на /jobs этого демона (origin берём свой,
+    // токен — из cookie dl_token, если включена аутентификация).
+    const ck = (document.cookie.match(/(?:^|; )dl_token=([^;]+)/) || [])[1];
+    const tok = ck ? decodeURIComponent(ck) : "";
+    const headers = tok
+      ? "{'Content-Type':'application/json','Authorization':'Bearer " + tok + "'}"
+      : "{'Content-Type':'application/json'}";
     document.getElementById("blet").href =
       "javascript:(function(){fetch('" + location.origin +
-      "/jobs',{method:'POST',headers:{'Content-Type':'application/json'}," +
-      "body:JSON.stringify({url:location.href})}).then(function(r){" +
+      "/jobs',{method:'POST',headers:" + headers +
+      ",body:JSON.stringify({url:location.href})}).then(function(r){" +
       "alert(r.ok?'Отправлено в downloader':'Ошибка '+r.status)})" +
       ".catch(function(e){alert('Не удалось: '+e)})})();";
 

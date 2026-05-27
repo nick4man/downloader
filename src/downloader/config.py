@@ -36,6 +36,9 @@ class Config(BaseModel):
     # '*' удобно для личного инструмента; ужесточай списком сайтов при необходимости.
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     cookies_file: str | None = None  # путь к cookies.txt (Netscape); None → COOKIES_PATH
+    # Токен доступа: если задан — API требует его (для выставления в интернет/туннель).
+    # None → без аутентификации (локальный режим).
+    auth_token: str | None = None
 
     def dump_toml(self) -> str:
         """Сериализовать в TOML (без сторонних зависимостей)."""
@@ -71,6 +74,7 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
     if cors := os.environ.get("DOWNLOADER_CORS"):
         config.cors_origins = [o.strip() for o in cors.split(",") if o.strip()]
     config.cookies_file = os.environ.get("DOWNLOADER_COOKIES", config.cookies_file)
+    config.auth_token = os.environ.get("DOWNLOADER_TOKEN", config.auth_token)
     return config
 
 

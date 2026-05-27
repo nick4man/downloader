@@ -11,7 +11,22 @@ services:
       - downloader-data:/data
     environment:
       DOWNLOADER_MAX_CONCURRENT: "3"
+      # Включи аутентификацию ПЕРЕД выставлением в интернет/туннель:
+      DOWNLOADER_TOKEN: ${DOWNLOADER_TOKEN:-}
     restart: unless-stopped
+
+  # Публичный HTTPS-доступ без проброса портов (для Android-PWA и удалёнки).
+  # Нужен токен именованного туннеля из дашборда Cloudflare Zero Trust;
+  # в настройках туннеля укажи public hostname → http://downloader:8765.
+  # Запускать профилем: docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [downloader]
+    restart: unless-stopped
+    profiles: [tunnel]
 
 volumes:
   downloader-data:

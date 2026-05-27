@@ -14,11 +14,13 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener(async (info) => {
   const url = info.linkUrl || info.srcUrl || info.pageUrl;
   if (!url) return;
-  const { base } = await chrome.storage.sync.get({ base: DEFAULT_BASE });
+  const { base, token } = await chrome.storage.sync.get({ base: DEFAULT_BASE, token: "" });
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = "Bearer " + token;
   try {
     const resp = await fetch(base.replace(/\/$/, "") + "/jobs", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ url }),
     });
     flash(resp.ok ? "✓" : "✗", resp.ok ? "#16a34a" : "#dc2626");
