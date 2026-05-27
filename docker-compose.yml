@@ -1,0 +1,17 @@
+services:
+  downloader:
+    build: .
+    image: downloader:latest
+    ports:
+      - "8765:8765"
+    volumes:
+      # Каталог загрузок на хосте (переопредели через DOWNLOAD_DIR).
+      - ${DOWNLOAD_DIR:-./downloads}:/downloads
+      # Состояние (SQLite-очередь, реестр хэшей) — именованный том.
+      - downloader-data:/data
+    environment:
+      DOWNLOADER_MAX_CONCURRENT: "3"
+    restart: unless-stopped
+
+volumes:
+  downloader-data:

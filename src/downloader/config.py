@@ -46,12 +46,21 @@ class Config(BaseModel):
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
-    """Загрузить конфиг; при отсутствии вернуть дефолтный."""
-    if not path.exists():
-        return Config()
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
-    return Config.model_validate(data)
+    """Загрузить конфиг: TOML, поверх — переменные окружения (для Docker)."""
+    data: dict = {}
+    if path.exists():
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    config = Config.model_validate(data)
+
+    # env-оверрайды (DOWNLOADER_*) имеют приоритет — удобно для контейнера.
+    config.host = os.environ.get("DOWNLOADER_HOST", config.host)
+    config.download_dir = os.environ.get("DOWNLOADER_DOWNLOAD_DIR", config.download_dir)
+    if port := os.environ.get("DOWNLOADER_PORT"):
+        config.port = int(port)
+    if mc := os.environ.get("DOWNLOADER_MAX_CONCURRENT"):
+        config.max_concurrent = int(mc)
+    return config
 
 
 def save_config(config: Config, path: Path = CONFIG_PATH) -> None:

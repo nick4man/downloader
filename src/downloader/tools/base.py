@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
 import shutil
 import sys
@@ -54,6 +55,11 @@ def resolve_binary(name: str) -> str:
     - остальные (aria2c, ...) — только PATH.
     """
     if name in ("ffmpeg", "ffprobe"):
+        # В Docker ffmpeg ставится через apt — указываем каталог явно, чтобы
+        # не тянуть static-ffmpeg по сети в рантайме.
+        env_dir = os.environ.get("DOWNLOADER_FFMPEG_DIR")
+        if env_dir:
+            return os.path.join(env_dir, name)
         paths = _static_ffmpeg_paths()
         if paths is not None:
             ffmpeg, ffprobe = paths

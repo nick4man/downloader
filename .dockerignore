@@ -1,0 +1,12 @@
+.venv/
+.git/
+.github/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+downloads/
+rclone/
+*.part
+*.aria2
+CLAUDE.local.md
