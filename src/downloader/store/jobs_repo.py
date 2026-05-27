@@ -11,7 +11,7 @@ from downloader.models import DownloadJob, JobState
 
 _COLUMNS = (
     "id, url, kind, dest_dir, filename, fmt, engine, state, "
-    "bytes_done, bytes_total, sha256, error, position, created_at, updated_at"
+    "bytes_done, bytes_total, sha256, error, position, audio, created_at, updated_at"
 )
 
 
@@ -31,7 +31,8 @@ async def add_job(conn: aiosqlite.Connection, job: DownloadJob) -> None:
     await conn.execute(
         f"INSERT INTO jobs ({_COLUMNS}) VALUES "
         "(:id, :url, :kind, :dest_dir, :filename, :fmt, :engine, :state, "
-        ":bytes_done, :bytes_total, :sha256, :error, :position, :created_at, :updated_at)",
+        ":bytes_done, :bytes_total, :sha256, :error, :position, :audio, "
+        ":created_at, :updated_at)",
         _job_params(job),
     )
     await conn.commit()
@@ -117,6 +118,7 @@ def _job_params(job: DownloadJob) -> dict:
         "sha256": job.sha256,
         "error": job.error,
         "position": job.position,
+        "audio": int(job.audio),
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
     }

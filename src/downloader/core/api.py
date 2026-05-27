@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel
 
 from downloader import __version__
-from downloader.config import COOKIES_PATH, load_config
+from downloader.config import COOKIES_PATH, load_config, save_config
 from downloader.core import cf_access
 from downloader.core.scheduler import Scheduler
 from downloader.models import DownloadJob, JobState
@@ -33,16 +33,25 @@ class AddRequest(BaseModel):
     url: str
     dir: str | None = None
     quality: int | None = None
+    audio: bool = False
 
 
 class ImportRequest(BaseModel):
     urls: list[str]
     dir: str | None = None
     quality: int | None = None
+    audio: bool = False
 
 
 class RenameRequest(BaseModel):
     filename: str
+
+
+class ConfigPatch(BaseModel):
+    download_dir: str | None = None
+    default_quality: int | None = None
+    max_concurrent: int | None = None
+    connections: int | None = None
 
 
 class MoveRequest(BaseModel):
@@ -238,7 +247,9 @@ async def get_job(job_id: str) -> DownloadJob:
 
 @app.post("/jobs")
 async def add_job(req: AddRequest) -> DownloadJob:
-    job = build_job(req.url, app.state.config, dest_dir=req.dir, quality=req.quality)
+    job = build_job(
+        req.url, app.state.config, dest_dir=req.dir, quality=req.quality, audio=req.audio
+    )
     await jobs_repo.add_job(app.state.conn, job)
     return job
 
@@ -251,7 +262,9 @@ async def import_jobs(req: ImportRequest) -> dict:
     for url in req.urls:
         if url in existing:
             continue
-        job = build_job(url, app.state.config, dest_dir=req.dir, quality=req.quality)
+        job = build_job(
+            url, app.state.config, dest_dir=req.dir, quality=req.quality, audio=req.audio
+        )
         await jobs_repo.add_job(conn, job)
         existing.add(url)  # чтобы дубль внутри самого списка не добавился дважды
         added += 1
@@ -352,6 +365,29 @@ async def upload_cookies(request: Request) -> dict:
 @app.delete("/cookies")
 async def delete_cookies() -> dict:
     COOKIES_PATH.unlink(missing_ok=True)
+    return {"ok": True}
+
+
+@app.get("/config")
+async def get_config() -> dict:
+    """Текущие редактируемые настройки для панели в морде."""
+    c = app.state.config
+    return {
+        "download_dir": c.download_dir,
+        "default_quality": c.default_quality,
+        "max_concurrent": c.max_concurrent,
+        "connections": c.connections,
+    }
+
+
+@app.put("/config")
+async def put_config(patch: ConfigPatch) -> dict:
+    """Сохранить настройки в config.toml и применить (пул воркеров — после restart)."""
+    c = app.state.config
+    for key, value in patch.model_dump(exclude_none=True).items():
+        setattr(c, key, value)
+    save_config(c)
+    app.state.scheduler.config = c
     return {"ok": True}
 
 

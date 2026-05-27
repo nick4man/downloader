@@ -16,9 +16,15 @@ def build_job(
     *,
     dest_dir: str | None = None,
     quality: int | None = None,
+    audio: bool = False,
 ) -> DownloadJob:
-    """Собрать DownloadJob: классифицировать ссылку и для медиа выбрать -f."""
+    """Собрать DownloadJob: классифицировать ссылку, выбрать -f (видео) / режим аудио."""
     dest = dest_dir or config.download_dir
     kind = classify(url)
-    fmt = select_format(quality or config.default_quality) if kind is DownloadKind.MEDIA else None
-    return DownloadJob(url=url, dest_dir=str(Path(dest).expanduser()), kind=kind, fmt=fmt)
+    # Для видео-медиа фиксируем -f по качеству; для аудио формат не нужен (yt-dlp -x).
+    fmt = None
+    if kind is DownloadKind.MEDIA and not audio:
+        fmt = select_format(quality or config.default_quality)
+    return DownloadJob(
+        url=url, dest_dir=str(Path(dest).expanduser()), kind=kind, fmt=fmt, audio=audio
+    )

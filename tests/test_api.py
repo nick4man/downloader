@@ -105,6 +105,20 @@ def test_share_target_adds_job(client) -> None:
     assert any("vimeo.com/12345" in j["url"] for j in client.get("/jobs").json())
 
 
+def test_audio_job(client) -> None:
+    j = client.post("/jobs", json={"url": "https://youtube.com/watch?v=x", "audio": True}).json()
+    assert j["audio"] is True
+    assert j["fmt"] is None  # для аудио -f не нужен (yt-dlp -x)
+
+
+def test_config_get_put(client, monkeypatch) -> None:
+    monkeypatch.setattr("downloader.core.api.save_config", lambda *a, **k: None)  # не писать файл
+    c = client.get("/config").json()
+    assert "download_dir" in c and "max_concurrent" in c
+    assert client.put("/config", json={"default_quality": 480, "max_concurrent": 5}).json()["ok"]
+    assert client.get("/config").json()["default_quality"] == 480
+
+
 def test_pwa_assets_served(client) -> None:
     m = client.get("/manifest.webmanifest")
     assert m.status_code == 200 and "share_target" in m.text

@@ -75,6 +75,7 @@ async def run_job(
                 job_id=job.id,
                 name=job.filename,
                 cookies=cookies,
+                audio=job.audio,
             )
         elif job.engine is Engine.FFMPEG:
             result = await ffmpeg.hls_to_mp4(

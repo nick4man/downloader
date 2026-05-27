@@ -35,9 +35,27 @@
   <header>
     <h1>⬇ downloader</h1>
     <input id="url" placeholder="Вставь ссылку и Enter…" autofocus>
-    <input id="quality" type="number" placeholder="кач-во">
+    <input id="quality" type="number" placeholder="кач-во" style="width:80px;">
+    <label style="white-space:nowrap;color:#9aa3af;font-size:13px;">
+      <input type="checkbox" id="audio"> аудио
+    </label>
+    <input id="dir" placeholder="каталог (опц.)" style="width:140px;">
     <button onclick="addJob()">Добавить</button>
+    <button class="ghost" onclick="toggleSettings()" title="Настройки">⚙</button>
   </header>
+
+  <section id="settings" hidden style="padding:14px 20px;background:#1a1d23;border-bottom:1px solid #23262d;">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;">
+      <label style="font-size:13px;color:#8b929e;">Каталог по умолчанию<br>
+        <input id="s-dir" style="width:260px;padding:6px;"></label>
+      <label style="font-size:13px;color:#8b929e;">Качество<br>
+        <input id="s-quality" type="number" style="width:90px;padding:6px;"></label>
+      <label style="font-size:13px;color:#8b929e;">Параллельно<br>
+        <input id="s-concurrent" type="number" style="width:90px;padding:6px;"></label>
+      <button onclick="saveSettings()">Сохранить</button>
+      <span id="s-msg" style="color:#16a34a;font-size:13px;"></span>
+    </div>
+  </section>
   <table>
     <thead><tr><th>Имя / URL</th><th>Статус</th><th>Прогресс</th><th></th></tr></thead>
     <tbody id="rows"></tbody>
@@ -77,7 +95,7 @@
         const canPause = j.state === "queued" || j.state === "running";
         const canResume = j.state === "paused" || j.state === "error";
         return `<tr>
-          <td class="name" title="${j.url}">${j.filename || "—"}<br><span class="url">${j.url}</span></td>
+          <td class="name" title="${j.url}">${j.audio ? "🎵 " : ""}${j.filename || "—"}<br><span class="url">${j.url}</span></td>
           <td><span class="state ${j.state}">${j.state}</span></td>
           <td>${bar}</td>
           <td>
@@ -98,10 +116,38 @@
       const q = document.getElementById("quality").value;
       await fetch("/jobs", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, quality: q ? +q : null }),
+        body: JSON.stringify({
+          url,
+          quality: q ? +q : null,
+          audio: document.getElementById("audio").checked,
+          dir: document.getElementById("dir").value.trim() || null,
+        }),
       });
       document.getElementById("url").value = "";
       refresh();
+    }
+
+    async function toggleSettings() {
+      const el = document.getElementById("settings");
+      el.hidden = !el.hidden;
+      if (el.hidden) return;
+      const c = await (await fetch("/config")).json();
+      document.getElementById("s-dir").value = c.download_dir;
+      document.getElementById("s-quality").value = c.default_quality;
+      document.getElementById("s-concurrent").value = c.max_concurrent;
+    }
+
+    async function saveSettings() {
+      await fetch("/config", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          download_dir: document.getElementById("s-dir").value.trim(),
+          default_quality: +document.getElementById("s-quality").value,
+          max_concurrent: +document.getElementById("s-concurrent").value,
+        }),
+      });
+      document.getElementById("s-msg").textContent = "✓ сохранено (пул — после restart)";
+      setTimeout(() => (document.getElementById("s-msg").textContent = ""), 2500);
     }
 
     async function act(id, verb) { await fetch(`/jobs/${id}/${verb}`, { method: "POST" }); refresh(); }

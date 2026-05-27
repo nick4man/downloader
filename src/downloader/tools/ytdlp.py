@@ -160,6 +160,7 @@ async def download(
     job_id: str = "",
     name: str | None = None,
     cookies: str | None = None,
+    audio: bool = False,
 ) -> Path | None:
     """Скачать медиа через yt-dlp с выбранным форматом и метаданными.
 
@@ -178,10 +179,11 @@ async def download(
     ffmpeg_loc: list[str] = []
     with contextlib.suppress(BinaryNotFound):
         ffmpeg_loc = ["--ffmpeg-location", str(Path(resolve_binary("ffmpeg")).parent)]
+    # Аудио: извлекаем дорожку через ffmpeg (-x) в mp3; иначе — видео по -f.
+    fmt_args = ["-x", "--audio-format", "mp3", "-f", "bestaudio/best"] if audio else ["-f", fmt]
     args = [
         *_base_args(),
-        "-f",
-        fmt,
+        *fmt_args,
         "-o",
         str(dest_dir / f"{stem}.%(ext)s"),
         "--newline",
