@@ -54,6 +54,12 @@ async def connect(path: Path | str = DB_PATH) -> aiosqlite.Connection:
         path.parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(path)
     conn.row_factory = aiosqlite.Row
+    if path != Path(":memory:"):
+        # WAL: одновременные читатели + один писатель без взаимных блокировок;
+        # busy_timeout: писатель ждёт освобождения, а не падает с «database is locked».
+        # Важно для связки демон + CLI, пишущих в одну БД.
+        await conn.execute("PRAGMA journal_mode = WAL")
+        await conn.execute("PRAGMA busy_timeout = 5000")
     await _migrate(conn)
     return conn
 

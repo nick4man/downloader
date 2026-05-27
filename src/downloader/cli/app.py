@@ -12,6 +12,8 @@ from rich.table import Table
 from downloader import __version__
 from downloader.cli import render
 from downloader.config import load_config
+from downloader.core import api_client
+from downloader.core import daemon as daemon_mod
 from downloader.core.engine import Engine
 from downloader.models import DownloadJob, DownloadKind, JobState, ProgressEvent
 from downloader.services.formats import select_format
@@ -72,7 +74,11 @@ def add(
     ),
 ) -> None:
     """Добавить ссылку в очередь закачки."""
-    asyncio.run(_add(url, dir, quality))
+    if api_client.is_up():
+        job = api_client.add(url, dir, quality)
+        console.print(f"Добавлено в демон: [dim]{job['id'][:8]}[/dim] ({job['kind']}) → {url}")
+    else:
+        asyncio.run(_add(url, dir, quality))
 
 
 async def _add(url: str, dir: str | None, quality: int | None) -> None:
@@ -158,7 +164,10 @@ async def _run_with_progress(engine: Engine) -> int:
 @app.command(name="list")
 def list_jobs() -> None:
     """Показать задачи в очереди."""
-    jobs = asyncio.run(_list())
+    if api_client.is_up():
+        jobs = [DownloadJob.model_validate(d) for d in api_client.list_jobs()]
+    else:
+        jobs = asyncio.run(_list())
     if not jobs:
         console.print("[dim]Задач нет.[/dim]")
         return
@@ -192,7 +201,17 @@ async def _resolve_job(conn, job_id: str) -> DownloadJob:
 @app.command()
 def status(job_id: str | None = typer.Argument(None)) -> None:
     """Показать статус одной задачи или всех."""
-    asyncio.run(_status(job_id))
+    if not api_client.is_up():
+        asyncio.run(_status(job_id))
+        return
+    if job_id is None:
+        jobs = [DownloadJob.model_validate(d) for d in api_client.list_jobs()]
+        console.print(render.jobs_table(jobs) if jobs else "[dim]Задач нет.[/dim]")
+        return
+    job = DownloadJob.model_validate(_via_daemon(lambda: api_client.get_job(job_id)))
+    console.print(render.jobs_table([job]))
+    if job.error:
+        console.print(f"[red]Ошибка:[/red] {job.error}")
 
 
 async def _status(job_id: str | None) -> None:
@@ -210,22 +229,35 @@ async def _status(job_id: str | None) -> None:
         await conn.close()
 
 
+def _via_daemon(fn) -> dict:
+    """Вызвать функцию клиента, аккуратно показав ошибку демона."""
+    try:
+        return fn()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+
+
 @app.command()
 def pause(job_id: str) -> None:
     """Поставить задачу на паузу (движок будет её пропускать)."""
-    asyncio.run(_set_state(job_id, JobState.PAUSED, allowed_from={JobState.QUEUED, JobState.ERROR}))
+    if api_client.is_up():
+        job = _via_daemon(lambda: api_client.pause(job_id))
+        console.print(f"[green]{job['id'][:8]} → {job['state']}[/green]")
+    else:
+        allowed = {JobState.QUEUED, JobState.ERROR}
+        asyncio.run(_set_state(job_id, JobState.PAUSED, allowed_from=allowed))
 
 
 @app.command()
 def resume(job_id: str) -> None:
     """Вернуть задачу в очередь."""
-    asyncio.run(
-        _set_state(
-            job_id,
-            JobState.QUEUED,
-            allowed_from={JobState.PAUSED, JobState.ERROR, JobState.CANCELED},
-        )
-    )
+    if api_client.is_up():
+        job = _via_daemon(lambda: api_client.resume(job_id))
+        console.print(f"[green]{job['id'][:8]} → {job['state']}[/green]")
+    else:
+        allowed = {JobState.PAUSED, JobState.ERROR, JobState.CANCELED}
+        asyncio.run(_set_state(job_id, JobState.QUEUED, allowed_from=allowed))
 
 
 async def _set_state(job_id: str, target: JobState, *, allowed_from: set[JobState]) -> None:
@@ -246,7 +278,11 @@ async def _set_state(job_id: str, target: JobState, *, allowed_from: set[JobStat
 @app.command()
 def rm(job_id: str) -> None:
     """Удалить задачу из очереди (с незавершёнными артефактами .part/.aria2)."""
-    asyncio.run(_rm(job_id))
+    if api_client.is_up():
+        job = _via_daemon(lambda: api_client.remove(job_id))
+        console.print(f"[green]Удалено: {job['removed'][:8]}[/green]")
+    else:
+        asyncio.run(_rm(job_id))
 
 
 async def _rm(job_id: str) -> None:
@@ -278,20 +314,23 @@ def import_urls(
     ),
 ) -> None:
     """Импортировать ссылки из файла (список/текст/HTML) в очередь."""
-    asyncio.run(_import(file, dir, quality))
-
-
-async def _import(file: str, dir: str | None, quality: int | None) -> None:
     path = Path(file).expanduser()
     if not path.is_file():
         console.print(f"[red]Файл не найден: {file}[/red]")
         raise typer.Exit(1)
-
     urls = extract_urls(path.read_text(encoding="utf-8", errors="replace"))
     if not urls:
         console.print("[yellow]URL в файле не найдены.[/yellow]")
         return
+    if api_client.is_up():
+        res = _via_daemon(lambda: api_client.import_urls(urls, dir, quality))
+        console.print(f"[green]Добавлено {res['added']}[/green] из {res['total']} (демон).")
+    else:
+        added = asyncio.run(_import_direct(urls, dir, quality))
+        console.print(f"[green]Добавлено {added}[/green] из {len(urls)} (дубли пропущены).")
 
+
+async def _import_direct(urls: list[str], dir: str | None, quality: int | None) -> int:
     config = load_config()
     dest = str(Path(dir or config.download_dir).expanduser())
     default_q = quality or config.default_quality
@@ -306,14 +345,24 @@ async def _import(file: str, dir: str | None, quality: int | None) -> None:
             fmt = select_format(default_q) if kind is DownloadKind.MEDIA else None
             await jobs_repo.add_job(conn, DownloadJob(url=url, dest_dir=dest, kind=kind, fmt=fmt))
             added += 1
+        return added
     finally:
         await conn.close()
-    console.print(f"[green]Добавлено {added}[/green] из {len(urls)} (дубли пропущены).")
 
 
 @app.command()
 def dedup() -> None:
     """Найти завершённые задачи с одинаковым содержимым (по SHA256)."""
+    if api_client.is_up():
+        groups = _via_daemon(api_client.dedup)
+        if not groups:
+            console.print("[dim]Дубликатов не найдено.[/dim]")
+            return
+        for g in groups:
+            console.print(f"[yellow]{g['sha256'][:12]}…[/yellow] — копий: {len(g['jobs'])}")
+            for j in g["jobs"]:
+                console.print(f"  {j['id'][:8]}  {j['filename'] or '—'}  [dim]{j['url']}[/dim]")
+        return
     asyncio.run(_dedup())
 
 
@@ -336,6 +385,48 @@ async def _dedup() -> None:
         console.print(f"[yellow]{sha[:12]}…[/yellow] — копий: {len(js)}")
         for job in js:
             console.print(f"  {job.id[:8]}  {job.filename or '—'}  [dim]{job.url}[/dim]")
+
+
+daemon_app = typer.Typer(
+    help="Управление фоновым демоном закачек.", no_args_is_help=True
+)
+app.add_typer(daemon_app, name="daemon")
+
+
+@daemon_app.command("start")
+def daemon_start() -> None:
+    """Запустить фоновый демон (подхватывает очередь без 'dl run')."""
+    pid = daemon_mod.start()
+    if daemon_mod.is_running():
+        console.print(f"[green]Демон работает[/green] (pid {pid}). Лог: {daemon_mod.LOG_PATH}")
+    else:
+        console.print(f"[red]Не удалось запустить демон.[/red] Смотри лог: {daemon_mod.LOG_PATH}")
+        raise typer.Exit(1)
+
+
+@daemon_app.command("stop")
+def daemon_stop() -> None:
+    """Остановить фоновый демон (SIGTERM, состояние сохраняется в БД)."""
+    if daemon_mod.stop():
+        console.print("[yellow]Демон остановлен.[/yellow]")
+    else:
+        console.print("[dim]Демон не запущен.[/dim]")
+
+
+@daemon_app.command("status")
+def daemon_status() -> None:
+    """Показать, работает ли фоновый демон."""
+    pid = daemon_mod.is_running()
+    if pid:
+        console.print(f"[green]Демон работает[/green] (pid {pid}).")
+    else:
+        console.print("[dim]Демон не запущен.[/dim]")
+
+
+@app.command("daemon-serve", hidden=True)
+def daemon_serve() -> None:
+    """(внутреннее) Тело фонового демона — запускается через 'dl daemon start'."""
+    asyncio.run(daemon_mod.serve())
 
 
 if __name__ == "__main__":

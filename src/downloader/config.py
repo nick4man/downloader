@@ -29,6 +29,8 @@ class Config(BaseModel):
     default_quality: int = 1080
     connections: int = 16  # параллельные соединения для aria2
     aria2_path: str | None = None  # None → автоопределение через shutil.which
+    host: str = "127.0.0.1"  # адрес демона
+    port: int = 8765  # порт демона
 
     def dump_toml(self) -> str:
         """Сериализовать в TOML (без сторонних зависимостей)."""
