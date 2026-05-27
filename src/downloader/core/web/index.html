@@ -60,8 +60,7 @@
         const bar = j.state === "running"
           ? `<progress max="100" ${pct != null ? `value="${pct}"` : ""}></progress> ${pct != null ? pct + "%" : fmt(j.bytes_done)}`
           : (j.state === "completed" ? fmt(j.bytes_total || j.bytes_done) : "—");
-        const id = j.id.slice(0, 8);
-        const canPause = j.state === "queued";
+        const canPause = j.state === "queued" || j.state === "running";
         const canResume = j.state === "paused" || j.state === "error";
         return `<tr>
           <td class="name" title="${j.url}">${j.filename || "—"}<br><span class="url">${j.url}</span></td>
@@ -70,7 +69,8 @@
           <td>
             ${canPause ? `<button class="act" onclick="act('${j.id}','pause')">⏸</button>` : ""}
             ${canResume ? `<button class="act" onclick="act('${j.id}','resume')">▶</button>` : ""}
-            <button class="act" onclick="rm('${j.id}')">🗑</button>
+            <button class="act" onclick="rename('${j.id}')" title="Переименовать">✏</button>
+            <button class="act" onclick="rm('${j.id}')" title="Удалить">🗑</button>
           </td>
         </tr>`;
       }).join("");
@@ -90,6 +90,15 @@
 
     async function act(id, verb) { await fetch(`/jobs/${id}/${verb}`, { method: "POST" }); refresh(); }
     async function rm(id) { await fetch(`/jobs/${id}`, { method: "DELETE" }); refresh(); }
+    async function rename(id) {
+      const name = prompt("Новое имя файла:");
+      if (!name) return;
+      await fetch(`/jobs/${id}/rename`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: name }),
+      });
+      refresh();
+    }
 
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
     refresh();

@@ -19,6 +19,7 @@ from downloader.config import load_config
 from downloader.core.scheduler import Scheduler
 from downloader.models import DownloadJob, JobState
 from downloader.services.intake import build_job
+from downloader.services.naming import sanitize_filename
 from downloader.store import jobs_repo
 from downloader.store.db import connect
 
@@ -33,6 +34,10 @@ class ImportRequest(BaseModel):
     urls: list[str]
     dir: str | None = None
     quality: int | None = None
+
+
+class RenameRequest(BaseModel):
+    filename: str
 
 
 @asynccontextmanager
@@ -130,7 +135,18 @@ async def import_jobs(req: ImportRequest) -> dict:
 
 @app.post("/jobs/{job_id}/pause")
 async def pause_job(job_id: str) -> DownloadJob:
-    return await _transition(job_id, JobState.PAUSED, {JobState.QUEUED, JobState.ERROR})
+    # Паузу разрешаем и для running — активный процесс прервётся (cancel).
+    allowed = {JobState.QUEUED, JobState.RUNNING, JobState.ERROR}
+    return await _transition(job_id, JobState.PAUSED, allowed)
+
+
+@app.post("/jobs/{job_id}/rename")
+async def rename_job(job_id: str, req: RenameRequest) -> DownloadJob:
+    conn, sched = app.state.conn, app.state.scheduler
+    job = await _resolve(conn, sched, job_id)
+    job.filename = sanitize_filename(req.filename)
+    await jobs_repo.update_job(conn, job)
+    return job
 
 
 @app.post("/jobs/{job_id}/resume")
@@ -144,6 +160,8 @@ async def _transition(job_id: str, target: JobState, allowed_from: set[JobState]
     job = await _resolve(conn, sched, job_id)
     if job.state not in allowed_from:
         raise HTTPException(409, f"Нельзя перевести из '{job.state.value}' в '{target.value}'")
+    if job.state is JobState.RUNNING:
+        sched.cancel(job.id)  # прервать активный процесс перед сменой состояния
     await jobs_repo.set_state(conn, job.id, target)
     job.state = target
     return job
@@ -153,6 +171,7 @@ async def _transition(job_id: str, target: JobState, allowed_from: set[JobState]
 async def remove_job(job_id: str) -> dict:
     conn, sched = app.state.conn, app.state.scheduler
     job = await _resolve(conn, sched, job_id)
+    sched.cancel(job.id)  # если качается — остановить процесс перед удалением
     await jobs_repo.delete_job(conn, job.id)
     if job.filename:
         target = Path(job.dest_dir) / job.filename

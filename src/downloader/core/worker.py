@@ -59,13 +59,12 @@ async def run_job(
             # Сайт-плагин: для поддерживаемых сайтов достаём реальный источник
             # (HLS-мастер → топ-качество) и заголовок; иначе качаем как есть.
             resolved = await sites.resolve_source(job.url)
-            if resolved:
-                src, title = resolved
-                name = sanitize_filename(title) if title else None
-            else:
-                src, name = job.url, None
-            if name:  # показать имя в `dl list`/строке состояния уже во время закачки
-                job.filename = name
+            src = resolved[0] if resolved else job.url
+            title = resolved[1] if resolved else None
+            # Имя: приоритет у пользовательского (rename), иначе заголовок страницы.
+            # Проставляем сразу, чтобы dl list/морда показывали его уже во время закачки.
+            if not job.filename and title:
+                job.filename = sanitize_filename(title)
                 await jobs_repo.update_job(conn, job)
             result = await ytdlp.download(
                 src,
@@ -73,7 +72,7 @@ async def run_job(
                 job.fmt or "best",
                 on_progress,
                 job_id=job.id,
-                name=name,
+                name=job.filename,
             )
         elif job.engine is Engine.FFMPEG:
             result = await ffmpeg.hls_to_mp4(

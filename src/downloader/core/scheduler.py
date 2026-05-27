@@ -28,6 +28,7 @@ class Scheduler:
         self.config = config
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._inflight: set[str] = set()  # id, уже отданные в очередь/в работе
+        self._active: dict[str, asyncio.Task] = {}  # job_id → задача run_job (для отмены)
         self.progress: dict[str, ProgressEvent] = {}  # последний снимок на job_id
         self._stop = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
@@ -50,6 +51,14 @@ class Scheduler:
     def stop(self) -> None:
         self._stop.set()
 
+    def cancel(self, job_id: str) -> bool:
+        """Прервать уже запущенную задачу (убивает дочерний процесс). True, если была активна."""
+        task = self._active.get(job_id)
+        if task is not None and not task.done():
+            task.cancel()
+            return True
+        return False
+
     async def _feeder(self) -> None:
         """Периодически класть новые queued-задачи в рабочую очередь."""
         while not self._stop.is_set():
@@ -66,15 +75,30 @@ class Scheduler:
             try:
                 job = await jobs_repo.get_job(self.conn, job_id)
                 if job is not None and job.state is JobState.QUEUED:
-                    await run_job(
-                        self.conn,
-                        job,
-                        self._on_progress,
-                        connections=self.config.connections,
+                    # Запускаем закачку отдельной задачей, чтобы её можно было
+                    # отменить (cancel) — это убьёт дочерний процесс через finally.
+                    task = asyncio.create_task(
+                        run_job(
+                            self.conn,
+                            job,
+                            self._on_progress,
+                            connections=self.config.connections,
+                        )
                     )
-            except Exception:  # noqa: BLE001 — воркер не должен падать целиком из-за одной задачи
+                    self._active[job_id] = task
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        if self._stop.is_set():
+                            raise  # общий shutdown воркера — выходим
+                        # отменили КОНКРЕТНУЮ задачу (pause/delete) — не падаем,
+                        # состояние выставит вызвавший cancel.
+            except asyncio.CancelledError:
+                raise  # shutdown
+            except Exception:  # noqa: BLE001 — одна задача не должна ронять воркер
                 pass
             finally:
+                self._active.pop(job_id, None)
                 self._inflight.discard(job_id)
                 self.progress.pop(job_id, None)
                 self._queue.task_done()

@@ -58,6 +58,14 @@ def test_pause_invalid_transition(client) -> None:
     assert r.status_code == 409
 
 
+def test_rename(client) -> None:
+    job = client.post("/jobs", json={"url": "https://e.com/f.zip"}).json()
+    renamed = client.post(f"/jobs/{job['id']}/rename", json={"filename": 'bad/name:?.zip'}).json()
+    # имя санитизируется (запрещённые символы убраны)
+    assert "/" not in renamed["filename"] and ":" not in renamed["filename"]
+    assert client.get(f"/jobs/{job['id']}").json()["filename"] == renamed["filename"]
+
+
 def test_import_dedup_404(client) -> None:
     res = client.post("/jobs/import", json={"urls": ["https://a.com/1", "https://a.com/1"]}).json()
     assert res == {"added": 1, "total": 2}  # дубль в списке схлопнут

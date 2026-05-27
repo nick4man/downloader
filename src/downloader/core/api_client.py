@@ -65,6 +65,10 @@ def remove(job_id: str) -> dict:
     return _request("DELETE", f"/jobs/{job_id}")
 
 
+def rename(job_id: str, filename: str) -> dict:
+    return _request("POST", f"/jobs/{job_id}/rename", json={"filename": filename})
+
+
 def dedup() -> list[dict]:
     return _request("GET", "/dedup")
 
