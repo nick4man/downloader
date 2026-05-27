@@ -95,5 +95,7 @@ class DownloadJob(BaseModel):
     error: str | None = None
     position: int = 0  # порядок в очереди (для ручной сортировки)
     audio: bool = False  # извлечь только аудио (yt-dlp -x)
+    source_id: str | None = None  # идентичность источника (extractor:id) для дедупа
+    height: int | None = None  # разрешение результата (для выбора лучшего качества)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

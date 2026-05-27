@@ -8,7 +8,7 @@ import aiosqlite
 
 from downloader.config import DB_PATH
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     error       TEXT,
     position    INTEGER NOT NULL DEFAULT 0,
     audio       INTEGER NOT NULL DEFAULT 0,
+    source_id   TEXT,
+    height      INTEGER,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -76,5 +78,8 @@ async def _migrate(conn: aiosqlite.Connection) -> None:
         await conn.execute("ALTER TABLE jobs ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
     if "audio" not in columns:  # v2 → v3
         await conn.execute("ALTER TABLE jobs ADD COLUMN audio INTEGER NOT NULL DEFAULT 0")
+    if "source_id" not in columns:  # v3 → v4: дедуп по идентичности источника
+        await conn.execute("ALTER TABLE jobs ADD COLUMN source_id TEXT")
+        await conn.execute("ALTER TABLE jobs ADD COLUMN height INTEGER")
     await conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     await conn.commit()

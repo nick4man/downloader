@@ -67,7 +67,7 @@ async def run_job(
             if not job.filename and title:
                 job.filename = sanitize_filename(title)
                 await jobs_repo.update_job(conn, job)
-            result = await ytdlp.download(
+            dl = await ytdlp.download(
                 src,
                 job.dest_dir,
                 job.fmt or "best",
@@ -77,6 +77,9 @@ async def run_job(
                 cookies=cookies,
                 audio=job.audio,
             )
+            result = dl.path
+            job.source_id = dl.source_id  # для дедупа по идентичности источника
+            job.height = dl.height
         elif job.engine is Engine.FFMPEG:
             result = await ffmpeg.hls_to_mp4(
                 job.url,
@@ -123,3 +126,8 @@ async def run_job(
     elif job.bytes_total:
         job.bytes_done = job.bytes_total
     await jobs_repo.update_job(conn, job)
+
+    # Дедуп по источнику: среди завершённых того же ролика оставить лучшее
+    # качество, файлы худших удалить (режим «заменять лучшим»).
+    if job.source_id and job.state is JobState.COMPLETED:
+        await dedup.reconcile_quality(conn, job)

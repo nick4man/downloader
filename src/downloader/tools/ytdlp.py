@@ -13,6 +13,7 @@ import json
 import re
 import shlex
 from pathlib import Path
+from typing import NamedTuple
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import Format, MediaInfo, ProgressEvent
@@ -39,6 +40,16 @@ _PROGRESS_TEMPLATE = (
     "DLPROG %(progress.downloaded_bytes)s "
     "%(progress.total_bytes,progress.total_bytes_estimate)s"
 )
+# После переноса файла печатаем метаданные одной строкой (поля через таб).
+_META_TEMPLATE = "after_move:DLMETA\t%(extractor)s\t%(id)s\t%(height)s\t%(filepath)s"
+
+
+class DownloadResult(NamedTuple):
+    """Итог закачки: путь к файлу + идентичность источника + разрешение."""
+
+    path: Path | None
+    source_id: str | None  # extractor:id — одинаков для всех качеств ролика
+    height: int | None
 
 
 def _to_bytes(num: str, unit: str) -> int:
@@ -161,7 +172,7 @@ async def download(
     name: str | None = None,
     cookies: str | None = None,
     audio: bool = False,
-) -> Path | None:
+) -> DownloadResult:
     """Скачать медиа через yt-dlp с выбранным форматом и метаданными.
 
     `name` задаёт имя файла (без расширения); если не задан — берётся из
@@ -207,7 +218,7 @@ async def download(
         *ffmpeg_loc,
         *cookies_arg,
         "--print",
-        "after_move:filepath",
+        _META_TEMPLATE,
         url,
     ]
     proc = await asyncio.create_subprocess_exec(
@@ -217,6 +228,8 @@ async def download(
     )
     assert proc.stdout is not None
     final_path: Path | None = None
+    source_id: str | None = None
+    height: int | None = None
     tail: list[str] = []
     try:
         async for line in iter_lines(proc.stdout):
@@ -226,11 +239,12 @@ async def download(
                 event = _parse_dlprog(line, job_id)
                 if event:
                     on_progress(event)
-            elif line.startswith("/"):
-                # Строка от --print after_move:filepath — абсолютный путь файла.
-                # Проверяем только абсолютные пути: иначе длинная строка ERROR
-                # на Path(line).exists() кидает OSError «File name too long».
-                candidate = Path(line)
+            elif line.startswith("DLMETA\t"):
+                # DLMETA<tab>extractor<tab>id<tab>height<tab>filepath
+                _, extractor, vid, h, filepath = (line.split("\t") + ["", "", "", ""])[:5]
+                source_id = f"{extractor}:{vid}" if vid else None
+                height = int(h) if h.isdigit() else None
+                candidate = Path(filepath)
                 if candidate.exists():
                     final_path = candidate
         code = await proc.wait()
@@ -238,4 +252,4 @@ async def download(
         terminate_if_alive(proc)  # отмена/Ctrl-C — гасим дочерний yt-dlp
     if code != 0:
         raise RuntimeError(f"yt-dlp вышел с кодом {code}:\n" + "\n".join(tail[-5:]))
-    return final_path
+    return DownloadResult(final_path, source_id, height)
