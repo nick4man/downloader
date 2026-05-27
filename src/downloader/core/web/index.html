@@ -67,6 +67,8 @@
           <td><span class="state ${j.state}">${j.state}</span></td>
           <td>${bar}</td>
           <td>
+            <button class="act" onclick="move('${j.id}','up')" title="Выше">↑</button>
+            <button class="act" onclick="move('${j.id}','down')" title="Ниже">↓</button>
             ${canPause ? `<button class="act" onclick="act('${j.id}','pause')">⏸</button>` : ""}
             ${canResume ? `<button class="act" onclick="act('${j.id}','resume')">▶</button>` : ""}
             <button class="act" onclick="rename('${j.id}')" title="Переименовать">✏</button>
@@ -89,6 +91,13 @@
     }
 
     async function act(id, verb) { await fetch(`/jobs/${id}/${verb}`, { method: "POST" }); refresh(); }
+    async function move(id, dir) {
+      await fetch(`/jobs/${id}/move`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction: dir }),
+      });
+      refresh();
+    }
     async function rm(id) { await fetch(`/jobs/${id}`, { method: "DELETE" }); refresh(); }
     async function rename(id) {
       const name = prompt("Новое имя файла:");

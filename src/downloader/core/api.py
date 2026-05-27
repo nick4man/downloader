@@ -40,6 +40,10 @@ class RenameRequest(BaseModel):
     filename: str
 
 
+class MoveRequest(BaseModel):
+    direction: str  # "up" | "down"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config = load_config()
@@ -138,6 +142,20 @@ async def pause_job(job_id: str) -> DownloadJob:
     # Паузу разрешаем и для running — активный процесс прервётся (cancel).
     allowed = {JobState.QUEUED, JobState.RUNNING, JobState.ERROR}
     return await _transition(job_id, JobState.PAUSED, allowed)
+
+
+@app.post("/jobs/{job_id}/move")
+async def move_job(job_id: str, req: MoveRequest) -> list[DownloadJob]:
+    conn, sched = app.state.conn, app.state.scheduler
+    job = await _resolve(conn, sched, job_id)
+    jobs = await jobs_repo.list_jobs(conn)
+    ids = [j.id for j in jobs]
+    idx = ids.index(job.id)
+    k = idx - 1 if req.direction == "up" else idx + 1
+    if 0 <= k < len(ids):
+        ids[idx], ids[k] = ids[k], ids[idx]
+        await jobs_repo.reorder(conn, ids)
+    return [_merge_live(j, sched) for j in await jobs_repo.list_jobs(conn)]
 
 
 @app.post("/jobs/{job_id}/rename")

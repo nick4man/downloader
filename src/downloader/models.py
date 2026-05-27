@@ -93,5 +93,6 @@ class DownloadJob(BaseModel):
     bytes_total: int | None = None
     sha256: str | None = None
     error: str | None = None
+    position: int = 0  # порядок в очереди (для ручной сортировки)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

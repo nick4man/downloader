@@ -11,7 +11,7 @@ from downloader.models import DownloadJob, JobState
 
 _COLUMNS = (
     "id, url, kind, dest_dir, filename, fmt, engine, state, "
-    "bytes_done, bytes_total, sha256, error, created_at, updated_at"
+    "bytes_done, bytes_total, sha256, error, position, created_at, updated_at"
 )
 
 
@@ -25,11 +25,13 @@ def _now_iso() -> str:
 
 
 async def add_job(conn: aiosqlite.Connection, job: DownloadJob) -> None:
-    """Вставить новую задачу."""
+    """Вставить новую задачу (в конец очереди — position = max+1)."""
+    async with conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM jobs") as cur:
+        (job.position,) = await cur.fetchone()
     await conn.execute(
         f"INSERT INTO jobs ({_COLUMNS}) VALUES "
         "(:id, :url, :kind, :dest_dir, :filename, :fmt, :engine, :state, "
-        ":bytes_done, :bytes_total, :sha256, :error, :created_at, :updated_at)",
+        ":bytes_done, :bytes_total, :sha256, :error, :position, :created_at, :updated_at)",
         _job_params(job),
     )
     await conn.commit()
@@ -41,7 +43,7 @@ async def update_job(conn: aiosqlite.Connection, job: DownloadJob) -> None:
     await conn.execute(
         "UPDATE jobs SET kind=:kind, filename=:filename, fmt=:fmt, engine=:engine, "
         "state=:state, bytes_done=:bytes_done, bytes_total=:bytes_total, "
-        "sha256=:sha256, error=:error, updated_at=:updated_at WHERE id=:id",
+        "sha256=:sha256, error=:error, position=:position, updated_at=:updated_at WHERE id=:id",
         _job_params(job),
     )
     await conn.commit()
@@ -80,7 +82,7 @@ async def list_jobs(
         placeholders = ",".join("?" * len(states))
         sql += f" WHERE state IN ({placeholders})"
         params = tuple(s.value for s in states)
-    sql += " ORDER BY created_at"
+    sql += " ORDER BY position, created_at"
     async with conn.execute(sql, params) as cur:
         rows = await cur.fetchall()
     return [_row_to_job(r) for r in rows]
@@ -89,6 +91,13 @@ async def list_jobs(
 async def delete_job(conn: aiosqlite.Connection, job_id: str) -> None:
     """Удалить задачу."""
     await conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+    await conn.commit()
+
+
+async def reorder(conn: aiosqlite.Connection, ordered_ids: list[str]) -> None:
+    """Записать position = индекс по заданному порядку id (один коммит)."""
+    for pos, job_id in enumerate(ordered_ids):
+        await conn.execute("UPDATE jobs SET position=? WHERE id=?", (pos, job_id))
     await conn.commit()
 
 
@@ -107,6 +116,7 @@ def _job_params(job: DownloadJob) -> dict:
         "bytes_total": job.bytes_total,
         "sha256": job.sha256,
         "error": job.error,
+        "position": job.position,
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
     }

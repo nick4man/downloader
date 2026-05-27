@@ -69,6 +69,10 @@ def rename(job_id: str, filename: str) -> dict:
     return _request("POST", f"/jobs/{job_id}/rename", json={"filename": filename})
 
 
+def move(job_id: str, direction: str) -> list[dict]:
+    return _request("POST", f"/jobs/{job_id}/move", json={"direction": direction})
+
+
 def dedup() -> list[dict]:
     return _request("GET", "/dedup")
 

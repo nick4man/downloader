@@ -8,7 +8,7 @@ import aiosqlite
 
 from downloader.config import DB_PATH
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     bytes_total INTEGER,
     sha256      TEXT,
     error       TEXT,
+    position    INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -66,6 +67,11 @@ async def connect(path: Path | str = DB_PATH) -> aiosqlite.Connection:
 
 async def _migrate(conn: aiosqlite.Connection) -> None:
     """Применить схему и проставить версию (простая миграция вперёд)."""
-    await conn.executescript(_SCHEMA)
+    await conn.executescript(_SCHEMA)  # создаёт таблицы для новой БД
+    # v1 → v2: добавить колонку position в существующую таблицу jobs.
+    async with conn.execute("PRAGMA table_info(jobs)") as cur:
+        columns = {row[1] for row in await cur.fetchall()}
+    if "position" not in columns:
+        await conn.execute("ALTER TABLE jobs ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
     await conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     await conn.commit()
