@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from downloader import __version__
 from downloader.config import COOKIES_PATH, load_config
+from downloader.core import cf_access
 from downloader.core.scheduler import Scheduler
 from downloader.models import DownloadJob, JobState
 from downloader.services.intake import build_job
@@ -78,29 +79,42 @@ app.add_middleware(
 _PUBLIC_PATHS = {"/health", "/", "/manifest.webmanifest", "/sw.js", "/icon.svg"}
 
 
-def _supplied_token(request: Request) -> str | None:
-    auth = request.headers.get("Authorization", "")
+def _supplied_token(req) -> str | None:
+    """Токен из Authorization: Bearer / cookie dl_token / ?token (req или websocket)."""
+    auth = req.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:]
-    return request.cookies.get("dl_token") or request.query_params.get("token")
+    return req.cookies.get("dl_token") or req.query_params.get("token")
+
+
+def _auth_enabled(config) -> bool:
+    return bool(config.auth_token or (config.cf_access_team_domain and config.cf_access_aud))
+
+
+def _authorized(req, config) -> bool:
+    """Доступ открыт, если валиден токен ИЛИ JWT Cloudflare Access."""
+    if config.auth_token and _supplied_token(req) == config.auth_token:
+        return True
+    cf_jwt = req.headers.get("Cf-Access-Jwt-Assertion") or req.cookies.get("CF_Authorization")
+    return cf_access.verify(cf_jwt, config) is not None
 
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    token = getattr(app.state, "config", None)
-    token = token.auth_token if token else None
-    # OPTIONS (CORS-preflight) и публичные пути — без токена.
+    config = getattr(app.state, "config", None)
+    # OPTIONS (CORS-preflight) и публичные пути — без аутентификации.
     if (
-        token
+        config
+        and _auth_enabled(config)
         and request.method != "OPTIONS"
         and request.url.path not in _PUBLIC_PATHS
-        and _supplied_token(request) != token
+        and not _authorized(request, config)
     ):
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
     response = await call_next(request)
     # ?token=… в URL → ставим cookie, дальше морда/share работают прозрачно.
-    if token and request.query_params.get("token") == token:
-        response.set_cookie("dl_token", token, max_age=31_536_000, samesite="lax")
+    if config and config.auth_token and request.query_params.get("token") == config.auth_token:
+        response.set_cookie("dl_token", config.auth_token, max_age=31_536_000, samesite="lax")
     return response
 
 
@@ -178,12 +192,10 @@ async def health() -> dict:
 @app.websocket("/ws")
 async def ws_jobs(websocket: WebSocket) -> None:
     """Стрим состояния задач: push полного списка (с живым прогрессом) раз в 0.5с."""
-    token = app.state.config.auth_token
-    if token:
-        supplied = websocket.cookies.get("dl_token") or websocket.query_params.get("token")
-        if supplied != token:
-            await websocket.close(code=1008)  # policy violation
-            return
+    config = app.state.config
+    if _auth_enabled(config) and not _authorized(websocket, config):
+        await websocket.close(code=1008)  # policy violation
+        return
     await websocket.accept()
     conn, sched = app.state.conn, app.state.scheduler
     try:

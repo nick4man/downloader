@@ -22,6 +22,16 @@ def test_env_overrides_config(monkeypatch, tmp_path: Path) -> None:
     assert cfg.cors_origins == ["https://a.com", "https://b.com"]
 
 
+def test_cf_access_env(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DOWNLOADER_CF_TEAM", "team.cloudflareaccess.com")
+    monkeypatch.setenv("DOWNLOADER_CF_AUD", "aud123")
+    monkeypatch.setenv("DOWNLOADER_CF_EMAILS", "a@x.com, b@y.com")
+    cfg = config.load_config(tmp_path / "absent.toml")
+    assert cfg.cf_access_team_domain == "team.cloudflareaccess.com"
+    assert cfg.cf_access_aud == "aud123"
+    assert cfg.cf_access_emails == ["a@x.com", "b@y.com"]
+
+
 def test_effective_cookies(monkeypatch, tmp_path) -> None:
     cookies = tmp_path / "c.txt"
     monkeypatch.setenv("DOWNLOADER_COOKIES", str(cookies))

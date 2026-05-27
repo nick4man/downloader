@@ -11,8 +11,10 @@ services:
       - downloader-data:/data
     environment:
       DOWNLOADER_MAX_CONCURRENT: "3"
-      # Включи аутентификацию ПЕРЕД выставлением в интернет/туннель:
+      # Аутентификация ПЕРЕД выставлением в интернет — токен и/или Cloudflare Access:
       DOWNLOADER_TOKEN: ${DOWNLOADER_TOKEN:-}
+      DOWNLOADER_CF_TEAM: ${DOWNLOADER_CF_TEAM:-}  # <team>.cloudflareaccess.com
+      DOWNLOADER_CF_AUD: ${DOWNLOADER_CF_AUD:-}  # AUD-тег Access-приложения
     restart: unless-stopped
 
   # Публичный HTTPS-доступ без проброса портов (для Android-PWA и удалёнки).

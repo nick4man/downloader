@@ -35,10 +35,22 @@ DOWNLOAD_DIR=/path/to/Videos DOWNLOADER_TOKEN=$DOWNLOADER_TOKEN \
      docker compose --profile tunnel up -d --build
    ```
 
-### Доп. слой: Cloudflare Access
-В Zero Trust → Access можно закрыть домен туннеля логином (Google/почта) —
-тогда до демона вообще не достучаться без авторизации. Рекомендуется вдобавок
-к токену.
+## 4. Вход по пользователю Cloudflare Access (вместо/вместе с токеном)
+В Zero Trust → Access закрой домен туннеля логином (Google/почта). Демон умеет
+**проверять JWT Access** сам (подпись + `aud`), так что доступ открыт, если
+пришёл валидный токен **или** валидный Cloudflare-пользователь — оба способа
+работают одновременно.
+
+Настрой демону:
+```bash
+DOWNLOADER_CF_TEAM=<team>.cloudflareaccess.com   # домен команды
+DOWNLOADER_CF_AUD=<application-audience-tag>      # AUD из Access-приложения
+DOWNLOADER_CF_EMAILS=me@example.com,friend@x.com  # (опц.) allowlist; пусто = любой вошедший
+```
+Где взять AUD: дашборд Access → твоё приложение → **Application Audience (AUD) Tag**.
+
+Так можно: оставить `DOWNLOADER_TOKEN` для расширения/букмарклета/curl, а вход
+с телефона/браузера закрыть логином Cloudflare — оба пути пускают.
 
 ## Android
 После того как туннель отдаёт HTTPS: открой морду на телефоне (с `?token=`),

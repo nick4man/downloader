@@ -39,6 +39,10 @@ class Config(BaseModel):
     # Токен доступа: если задан — API требует его (для выставления в интернет/туннель).
     # None → без аутентификации (локальный режим).
     auth_token: str | None = None
+    # Cloudflare Access: альтернативный вход по пользователю (проверка JWT).
+    cf_access_team_domain: str | None = None  # <team>.cloudflareaccess.com
+    cf_access_aud: str | None = None  # Application Audience (AUD) tag приложения
+    cf_access_emails: list[str] = Field(default_factory=list)  # allowlist (пусто = любой)
 
     def dump_toml(self) -> str:
         """Сериализовать в TOML (без сторонних зависимостей)."""
@@ -75,6 +79,12 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
         config.cors_origins = [o.strip() for o in cors.split(",") if o.strip()]
     config.cookies_file = os.environ.get("DOWNLOADER_COOKIES", config.cookies_file)
     config.auth_token = os.environ.get("DOWNLOADER_TOKEN", config.auth_token)
+    config.cf_access_team_domain = os.environ.get(
+        "DOWNLOADER_CF_TEAM", config.cf_access_team_domain
+    )
+    config.cf_access_aud = os.environ.get("DOWNLOADER_CF_AUD", config.cf_access_aud)
+    if emails := os.environ.get("DOWNLOADER_CF_EMAILS"):
+        config.cf_access_emails = [e.strip() for e in emails.split(",") if e.strip()]
     return config
 
 
