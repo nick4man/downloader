@@ -7,6 +7,7 @@ Lifespan поднимает Scheduler (непрерывную закачку) н
 from __future__ import annotations
 
 import asyncio
+import html
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -103,13 +104,17 @@ def _authorized(req, config) -> bool:
 async def auth_middleware(request: Request, call_next):
     config = getattr(app.state, "config", None)
     # OPTIONS (CORS-preflight) и публичные пути — без аутентификации.
-    if (
+    gated = (
         config
         and _auth_enabled(config)
         and request.method != "OPTIONS"
         and request.url.path not in _PUBLIC_PATHS
-        and not _authorized(request, config)
-    ):
+    )
+    if gated and not _authorized(request, config):
+        # Браузерную навигацию (напр. /share с телефона) уводим в приложение
+        # на вход, а не отдаём сырой 401; API-вызовы получают 401 JSON.
+        if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+            return RedirectResponse("/", status_code=303)
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
     response = await call_next(request)
     # ?token=… в URL → ставим cookie, дальше морда/share работают прозрачно.
@@ -170,18 +175,30 @@ async def icon() -> Response:
     return Response(_ICON, media_type="image/svg+xml")
 
 
-@app.get("/share")
-async def share(url: str = "", text: str = "", title: str = "") -> RedirectResponse:
+@app.get("/share", response_class=HTMLResponse)
+async def share(url: str = "", text: str = "", title: str = "") -> str:
     """Web Share Target (Android PWA): принять расшаренный URL и поставить в очередь.
 
     Android кладёт ссылку то в `url`, то в `text` — достаём из всех полей.
+    Возвращает мобильную страницу-подтверждение (не перезагружая всё приложение).
     """
     candidates = [url, *extract_urls(text), *extract_urls(title)]
     target = next((u for u in candidates if u.startswith("http")), None)
     if target:
-        job = build_job(target, app.state.config)
-        await jobs_repo.add_job(app.state.conn, job)
-    return RedirectResponse("/", status_code=303)
+        await jobs_repo.add_job(app.state.conn, build_job(target, app.state.config))
+        msg, sub = "✓ Отправлено в downloader", target
+    else:
+        msg, sub = "Ссылка не найдена", (text or title or "—")
+    return f"""<!doctype html><html lang=ru><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<style>body{{font-family:system-ui;background:#14161a;color:#e6e6e6;margin:0;
+height:100vh;display:flex;flex-direction:column;align-items:center;
+justify-content:center;gap:14px;padding:24px;text-align:center}}
+a{{color:#3b82f6;text-decoration:none}}
+.sub{{color:#6b7280;word-break:break-all;font-size:13px}}</style>
+</head><body><div style="font-size:22px">{html.escape(msg)}</div>
+<div class=sub>{html.escape(sub)}</div>
+<a href="/">Открыть очередь →</a></body></html>"""
 
 
 @app.get("/health")

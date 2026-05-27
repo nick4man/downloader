@@ -51,6 +51,14 @@ def test_auth_token_gates_api(monkeypatch) -> None:
         ok = c.get("/jobs", headers={"Authorization": "Bearer secret"})
         assert ok.status_code == 200
         assert c.get("/jobs?token=secret").status_code == 200  # ?token → cookie
+        # навигация (share с телефона) без токена → редирект в приложение, не 401
+        c.cookies.clear()  # ?token выше поставил cookie — сбрасываем для чистоты
+        nav = c.get(
+            "/share?text=https://e.com/x",
+            headers={"Accept": "text/html"},
+            follow_redirects=False,
+        )
+        assert nav.status_code == 303
 
 
 def test_cors_allows_cross_origin(client) -> None:
@@ -89,10 +97,8 @@ def test_websocket_streams_jobs(client) -> None:
 
 def test_share_target_adds_job(client) -> None:
     # Android-шаринг кладёт ссылку в text — должны её извлечь и поставить в очередь.
-    r = client.get(
-        "/share", params={"text": "смотри https://youtu.be/abc крутое"}, follow_redirects=False
-    )
-    assert r.status_code == 303
+    r = client.get("/share", params={"text": "смотри https://youtu.be/abc крутое"})
+    assert r.status_code == 200 and "Отправлено" in r.text  # страница-подтверждение
     assert any("youtu.be/abc" in j["url"] for j in client.get("/jobs").json())
 
 
