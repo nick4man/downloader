@@ -6,11 +6,12 @@ Lifespan поднимает Scheduler (непрерывную закачку) н
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -52,8 +53,6 @@ async def lifespan(app: FastAPI):
     app.state.conn = conn
     app.state.config = config
     app.state.scheduler = sched
-    import asyncio
-
     runner = asyncio.create_task(sched.run_forever())
     try:
         yield
@@ -102,6 +101,21 @@ async def index() -> str:
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True, "version": __version__}
+
+
+@app.websocket("/ws")
+async def ws_jobs(websocket: WebSocket) -> None:
+    """Стрим состояния задач: push полного списка (с живым прогрессом) раз в 0.5с."""
+    await websocket.accept()
+    conn, sched = app.state.conn, app.state.scheduler
+    try:
+        while True:
+            jobs = await jobs_repo.list_jobs(conn)
+            payload = [_merge_live(j, sched).model_dump(mode="json") for j in jobs]
+            await websocket.send_json(payload)
+            await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        pass
 
 
 @app.get("/jobs")

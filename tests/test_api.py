@@ -38,6 +38,14 @@ def test_reload(client) -> None:
     assert "max_concurrent" in r
 
 
+def test_websocket_streams_jobs(client) -> None:
+    client.post("/jobs", json={"url": "https://e.com/f.zip"})
+    with client.websocket_connect("/ws") as ws:
+        data = ws.receive_json()  # первый снимок приходит сразу
+        assert isinstance(data, list)
+        assert any(j["url"] == "https://e.com/f.zip" for j in data)
+
+
 def test_web_ui_served(client) -> None:
     r = client.get("/")
     assert r.status_code == 200

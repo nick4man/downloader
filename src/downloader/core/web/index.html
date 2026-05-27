@@ -49,10 +49,7 @@
       return n.toFixed(i ? 1 : 0) + " " + u[i];
     };
 
-    async function refresh() {
-      let jobs;
-      try { jobs = await (await fetch("/jobs")).json(); }
-      catch { return; }
+    function render(jobs) {
       const rows = document.getElementById("rows");
       document.getElementById("empty").hidden = jobs.length > 0;
       rows.innerHTML = jobs.map(j => {
@@ -109,9 +106,21 @@
       refresh();
     }
 
+    async function refresh() {
+      try { render(await (await fetch("/jobs")).json()); } catch {}
+    }
+
+    function connectWS() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onmessage = e => render(JSON.parse(e.data));
+      ws.onclose = () => setTimeout(connectWS, 1000);  // переподключение
+      ws.onerror = () => ws.close();
+    }
+
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
-    refresh();
-    setInterval(refresh, 1000);
+    refresh();    // мгновенная первая отрисовка
+    connectWS();  // дальше — живой поток по WebSocket
   </script>
 </body>
 </html>
