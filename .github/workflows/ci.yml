@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Внешние инструменты (для интеграционных тестов)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg aria2
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: ruff
+        run: uv run ruff check src tests
+      - name: pytest
+        env:
+          DOWNLOADER_FFMPEG_DIR: /usr/bin  # брать ffmpeg из apt, не тянуть static
+        run: uv run pytest -q
