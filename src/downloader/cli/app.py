@@ -14,6 +14,7 @@ from downloader.cli import render
 from downloader.config import load_config
 from downloader.core import api_client
 from downloader.core import daemon as daemon_mod
+from downloader.core import service as service_mod
 from downloader.core.engine import Engine
 from downloader.models import DownloadJob, DownloadKind, JobState, ProgressEvent
 from downloader.services.formats import select_format
@@ -451,6 +452,38 @@ def daemon_status() -> None:
 def daemon_serve() -> None:
     """(внутреннее) Тело фонового демона — запускается через 'dl daemon start'."""
     asyncio.run(daemon_mod.serve())
+
+
+service_app = typer.Typer(help="Автозапуск демона как systemd user-сервиса.", no_args_is_help=True)
+app.add_typer(service_app, name="service")
+
+
+@service_app.command("install")
+def service_install() -> None:
+    """Установить и включить автозапуск демона (systemd --user)."""
+    path, out = service_mod.install()
+    console.print(f"[green]Unit записан:[/green] {path}")
+    if service_mod.status() == "active":
+        console.print("[green]Сервис включён и работает.[/green]")
+    else:
+        console.print(f"[yellow]systemctl:[/yellow] {out or '—'}")
+        console.print(
+            "[dim]Если systemd --user недоступен в WSL — проверь 'systemctl --user' "
+            "и при необходимости 'loginctl enable-linger'.[/dim]"
+        )
+
+
+@service_app.command("uninstall")
+def service_uninstall() -> None:
+    """Отключить автозапуск и удалить unit."""
+    service_mod.uninstall()
+    console.print("[yellow]Сервис отключён, unit удалён.[/yellow]")
+
+
+@service_app.command("status")
+def service_status() -> None:
+    """Показать состояние сервиса (systemctl is-active)."""
+    console.print(f"Сервис: [bold]{service_mod.status()}[/bold]")
 
 
 if __name__ == "__main__":
