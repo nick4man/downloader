@@ -3,111 +3,171 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#14161a">
+  <meta name="theme-color" content="#0f1115">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
   <title>downloader</title>
   <style>
-    :root { color-scheme: dark; }
-    body { font-family: system-ui, sans-serif; margin: 0; background: #14161a; color: #e6e6e6; }
-    header { padding: 14px 20px; background: #1d2026; display: flex; gap: 12px; align-items: center; }
-    header h1 { font-size: 18px; margin: 0; flex: 0 0 auto; }
-    #url { flex: 1; padding: 8px 10px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #e6e6e6; }
-    #quality { width: 90px; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #e6e6e6; }
-    button { padding: 8px 12px; border: 0; border-radius: 6px; background: #3b82f6; color: #fff; cursor: pointer; }
-    button.ghost { background: #2a2e36; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #23262d; font-size: 14px; vertical-align: middle; }
-    th { color: #8b929e; font-weight: 600; }
-    td.name { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    td.url { color: #6b7280; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    progress { width: 140px; height: 12px; }
-    .state { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
-    .queued { background: #1e3a5f; } .running { background: #5a4a00; }
-    .paused { background: #334; } .completed { background: #14532d; }
-    .error { background: #5c1a1a; } .canceled { background: #333; }
-    .empty { padding: 40px; text-align: center; color: #6b7280; }
-    .act { background: none; color: #9aa3af; padding: 4px 8px; }
-    .act:hover { color: #fff; }
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115; --surface: #181b21; --surface2: #1f232b; --border: #2a2f38;
+      --text: #e8eaed; --muted: #8b929e; --accent: #3b82f6; --accent-h: #2f6fe0;
+      --ok: #16a34a; --warn: #b45309; --err: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px 40px; }
+
+    header { position: sticky; top: 0; z-index: 5; background: rgba(15,17,21,.92);
+      backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+    .bar { max-width: 980px; margin: 0 auto; padding: 12px 16px;
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .brand { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .grow { flex: 1 1 240px; }
+    input, button, select { font: inherit; }
+    input[type=text], input#url, input#quality, input#dir, .fld {
+      padding: 9px 11px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); outline: none; }
+    input:focus { border-color: var(--accent); }
+    input#quality { width: 84px; } input#dir { width: 150px; }
+    .chk { display: flex; align-items: center; gap: 6px; color: var(--muted);
+      white-space: nowrap; user-select: none; }
+    button { padding: 9px 14px; border: 0; border-radius: 9px; background: var(--accent);
+      color: #fff; cursor: pointer; font-weight: 600; }
+    button:hover { background: var(--accent-h); }
+    button.ghost { background: var(--surface2); color: var(--text); font-weight: 500; }
+    button.ghost:hover { background: var(--border); }
+
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px; margin: 16px 0; }
+    .panel h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; }
+    .grid { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
+    .grid label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 5px; }
+
+    #list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+    .job { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+    .job:hover { border-color: #38404c; }
+    .grip { color: #5b626d; cursor: grab; font-size: 16px; flex: 0 0 auto; }
+    .meta { flex: 1 1 auto; min-width: 0; }
+    .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .progress { flex: 0 0 200px; }
+    .track { height: 7px; border-radius: 4px; background: var(--surface2); overflow: hidden; }
+    .fill { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+    .pinfo { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; }
+    .pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; flex: 0 0 auto; }
+    .queued { background: #1e3a5f; color: #9cc4ff; } .running { background: #3a3000; color: #f4d35e; }
+    .paused { background: #2d3340; color: #aab3c0; } .completed { background: #0f3d24; color: #6ee7a0; }
+    .error { background: #4a1414; color: #ff9a9a; } .canceled { background: #2d3340; color: #8b929e; }
+    .acts { display: flex; gap: 2px; flex: 0 0 auto; }
+    .act { background: none; color: var(--muted); padding: 5px 7px; font-size: 14px; font-weight: 400; border-radius: 7px; }
+    .act:hover { color: var(--text); background: var(--surface2); }
+    .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+
+    footer { color: var(--muted); font-size: 12px; margin-top: 28px;
+      border-top: 1px solid var(--border); padding-top: 16px; }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    .frow { margin-top: 8px; }
+
+    @media (max-width: 640px) {
+      .progress { flex-basis: 110px; } .sub { display: none; }
+      input#dir { display: none; }
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>⬇ downloader</h1>
-    <input id="url" placeholder="Вставь ссылку и Enter…" autofocus>
-    <input id="quality" type="number" placeholder="кач-во" style="width:80px;">
-    <label style="white-space:nowrap;color:#9aa3af;font-size:13px;">
-      <input type="checkbox" id="audio"> аудио
-    </label>
-    <input id="dir" placeholder="каталог (опц.)" style="width:140px;">
-    <button onclick="addJob()">Добавить</button>
-    <button class="ghost" onclick="toggleSettings()" title="Настройки">⚙</button>
+    <div class="bar">
+      <span class="brand">⬇ downloader</span>
+      <input id="url" class="grow" type="text" placeholder="Вставь ссылку…" autofocus>
+      <input id="quality" type="number" placeholder="кач-во" title="макс. высота, напр. 1080">
+      <label class="chk"><input type="checkbox" id="audio"> аудио</label>
+      <input id="dir" type="text" placeholder="каталог (опц.)">
+      <button onclick="addJob()">Добавить</button>
+      <button class="ghost" onclick="toggleSettings()" title="Настройки">⚙</button>
+    </div>
   </header>
 
-  <section id="settings" hidden style="padding:14px 20px;background:#1a1d23;border-bottom:1px solid #23262d;">
-    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;">
-      <label style="font-size:13px;color:#8b929e;">Каталог по умолчанию<br>
-        <input id="s-dir" style="width:260px;padding:6px;"></label>
-      <label style="font-size:13px;color:#8b929e;">Качество<br>
-        <input id="s-quality" type="number" style="width:90px;padding:6px;"></label>
-      <label style="font-size:13px;color:#8b929e;">Параллельно<br>
-        <input id="s-concurrent" type="number" style="width:90px;padding:6px;"></label>
-      <button onclick="saveSettings()">Сохранить</button>
-      <span id="s-msg" style="color:#16a34a;font-size:13px;"></span>
-    </div>
-  </section>
-  <table>
-    <thead><tr><th>Имя / URL</th><th>Статус</th><th>Прогресс</th><th></th></tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
-  <div id="empty" class="empty" hidden>Очередь пуста. Добавь ссылку выше.</div>
+  <div class="wrap">
+    <section id="settings" class="panel" hidden>
+      <h3>Настройки</h3>
+      <div class="grid">
+        <label>Каталог по умолчанию<input id="s-dir" class="fld" style="width:260px"></label>
+        <label>Качество<input id="s-quality" class="fld" type="number" style="width:90px"></label>
+        <label>Параллельно<input id="s-concurrent" class="fld" type="number" style="width:90px"></label>
+        <button onclick="saveSettings()">Сохранить</button>
+        <span id="s-msg" style="color:var(--ok)"></span>
+      </div>
+    </section>
 
-  <footer style="padding:12px 20px;color:#6b7280;font-size:13px;border-top:1px solid #23262d;">
-    Перетащи на панель закладок, чтобы слать текущую страницу одним кликом:
-    <a id="blet" href="#" style="color:#3b82f6;font-weight:600;">📎 В downloader</a>
-    <span style="margin-left:10px;">или поставь
-      <a href="https://github.com/nick4man/downloader/tree/main/extension" style="color:#3b82f6;">расширение</a>
-      (правый клик → отправить),
-      <a href="https://github.com/nick4man/downloader/blob/main/IOS.md" style="color:#3b82f6;">iOS-ярлык</a>.</span>
-    <div style="margin-top:10px;">
-      🍪 Cookies (для приватного / age-gate):
-      <input type="file" id="cookies" accept=".txt" style="color:#9aa3af;">
-      <span id="cookies-status" style="color:#9aa3af;"></span>
-    </div>
-  </footer>
+    <div id="list"></div>
+    <div id="empty" class="empty" hidden>Очередь пуста. Вставь ссылку выше — или поделись с телефона.</div>
+
+    <footer>
+      <div>
+        📎 <a id="blet" href="#">В downloader</a> — перетащи на панель закладок.
+        Ещё: <a href="https://github.com/nick4man/downloader/tree/main/extension">расширение</a>,
+        <a href="https://github.com/nick4man/downloader/blob/main/IOS.md">iOS-ярлык</a>.
+      </div>
+      <div class="frow">
+        🍪 Cookies (приватное / age-gate):
+        <input type="file" id="cookies" accept=".txt">
+        <span id="cookies-status"></span>
+      </div>
+    </footer>
+  </div>
 
   <script>
     const fmt = n => {
-      if (!n) return "—";
-      const u = ["Б", "КиБ", "МиБ", "ГиБ"]; let i = 0;
+      if (!n) return "0 Б";
+      const u = ["Б", "КиБ", "МиБ", "ГиБ", "ТиБ"]; let i = 0;
       while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
       return n.toFixed(i ? 1 : 0) + " " + u[i];
     };
+    const esc = s => (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    function progressInfo(j) {
+      const parts = [];
+      if (j.bytes_total) parts.push(`${fmt(j.bytes_done)} / ${fmt(j.bytes_total)}`);
+      else if (j.bytes_done) parts.push(fmt(j.bytes_done));
+      if (j.speed) parts.push(fmt(j.speed) + "/с");
+      if (j.eta) parts.push("≈" + Math.round(j.eta) + "с");
+      return parts.join(" · ");
+    }
 
     function render(jobs) {
-      if (window.__dragging) return;  // не перерисовываем во время перетаскивания
-      const rows = document.getElementById("rows");
+      if (window.__dragging) return;
       document.getElementById("empty").hidden = jobs.length > 0;
-      rows.innerHTML = jobs.map(j => {
-        const pct = j.bytes_total ? Math.round(100 * j.bytes_done / j.bytes_total) : null;
-        const bar = j.state === "running"
-          ? `<progress max="100" ${pct != null ? `value="${pct}"` : ""}></progress> ${pct != null ? pct + "%" : fmt(j.bytes_done)}`
-          : (j.state === "completed" ? fmt(j.bytes_total || j.bytes_done) : "—");
+      document.getElementById("list").innerHTML = jobs.map(j => {
+        const pct = j.bytes_total ? Math.min(100, Math.round(100 * j.bytes_done / j.bytes_total)) : 0;
+        const done = j.state === "completed";
+        const showBar = j.state === "running" || done;
+        const bar = showBar
+          ? `<div class="track"><div class="fill" style="width:${done ? 100 : pct}%;background:${done ? "var(--ok)" : "var(--accent)"}"></div></div>
+             <div class="pinfo">${done ? "✓ " + fmt(j.bytes_total || j.bytes_done) : (pct + "% · " + progressInfo(j))}</div>`
+          : `<div class="pinfo">—</div>`;
         const canPause = j.state === "queued" || j.state === "running";
         const canResume = j.state === "paused" || j.state === "error";
-        return `<tr draggable="true" data-id="${j.id}" style="cursor:grab">
-          <td class="name" title="${j.url}">${j.audio ? "🎵 " : ""}${j.filename || "—"}<br><span class="url">${j.url}</span></td>
-          <td><span class="state ${j.state}">${j.state}</span></td>
-          <td>${bar}</td>
-          <td>
+        return `<div class="job" draggable="true" data-id="${j.id}">
+          <span class="grip" title="Перетащить">⠿</span>
+          <div class="meta">
+            <div class="title">${j.audio ? "🎵 " : ""}${esc(j.filename) || "—"}</div>
+            <div class="sub">${esc(j.url)}</div>
+          </div>
+          <div class="progress">${bar}</div>
+          <span class="pill ${j.state}">${j.state}</span>
+          <div class="acts">
             <button class="act" onclick="move('${j.id}','up')" title="Выше">↑</button>
             <button class="act" onclick="move('${j.id}','down')" title="Ниже">↓</button>
-            ${canPause ? `<button class="act" onclick="act('${j.id}','pause')">⏸</button>` : ""}
-            ${canResume ? `<button class="act" onclick="act('${j.id}','resume')">▶</button>` : ""}
+            ${canPause ? `<button class="act" onclick="act('${j.id}','pause')" title="Пауза">⏸</button>` : ""}
+            ${canResume ? `<button class="act" onclick="act('${j.id}','resume')" title="Возобновить">▶</button>` : ""}
             <button class="act" onclick="rename('${j.id}')" title="Переименовать">✏</button>
             <button class="act" onclick="rm('${j.id}')" title="Удалить">🗑</button>
-          </td>
-        </tr>`;
+          </div>
+        </div>`;
       }).join("");
     }
 
@@ -147,8 +207,9 @@
           max_concurrent: +document.getElementById("s-concurrent").value,
         }),
       });
-      document.getElementById("s-msg").textContent = "✓ сохранено (пул — после restart)";
-      setTimeout(() => (document.getElementById("s-msg").textContent = ""), 2500);
+      const m = document.getElementById("s-msg");
+      m.textContent = "✓ сохранено (пул — после restart)";
+      setTimeout(() => (m.textContent = ""), 2500);
     }
 
     async function act(id, verb) { await fetch(`/jobs/${id}/${verb}`, { method: "POST" }); refresh(); }
@@ -177,22 +238,19 @@
         render(await r.json());
       } catch {}
     }
-
     function askToken() {
       const t = prompt("Токен доступа (DOWNLOADER_TOKEN):");
-      if (t) location.search = "?token=" + encodeURIComponent(t);  // → сервер ставит cookie
+      if (t) location.search = "?token=" + encodeURIComponent(t);
     }
-
     function connectWS() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/ws`);
       ws.onmessage = e => render(JSON.parse(e.data));
-      ws.onclose = () => setTimeout(connectWS, 1000);  // переподключение
+      ws.onclose = () => setTimeout(connectWS, 1000);
       ws.onerror = () => ws.close();
     }
 
-    // Букмарклет: шлёт текущую страницу на /jobs этого демона (origin берём свой,
-    // токен — из cookie dl_token, если включена аутентификация).
+    // Букмарклет (с токеном из cookie, если включена аутентификация).
     const ck = (document.cookie.match(/(?:^|; )dl_token=([^;]+)/) || [])[1];
     const tok = ck ? decodeURIComponent(ck) : "";
     const headers = tok
@@ -205,22 +263,22 @@
       "alert(r.ok?'Отправлено в downloader':'Ошибка '+r.status)})" +
       ".catch(function(e){alert('Не удалось: '+e)})})();";
 
-    // Drag-and-drop сортировка очереди (порядок шлём целиком на /jobs/reorder).
-    const rowsEl = document.getElementById("rows");
+    // Drag-and-drop сортировка (порядок шлём целиком на /jobs/reorder).
+    const listEl = document.getElementById("list");
     let draggedId = null;
-    rowsEl.addEventListener("dragstart", e => {
-      const tr = e.target.closest("tr");
-      if (tr) { draggedId = tr.dataset.id; window.__dragging = true; }
+    listEl.addEventListener("dragstart", e => {
+      const card = e.target.closest(".job");
+      if (card) { draggedId = card.dataset.id; window.__dragging = true; }
     });
-    rowsEl.addEventListener("dragover", e => e.preventDefault());
-    rowsEl.addEventListener("dragend", () => { window.__dragging = false; });
-    rowsEl.addEventListener("drop", async e => {
+    listEl.addEventListener("dragover", e => e.preventDefault());
+    listEl.addEventListener("dragend", () => { window.__dragging = false; });
+    listEl.addEventListener("drop", async e => {
       e.preventDefault();
       window.__dragging = false;
-      const tr = e.target.closest("tr");
-      if (!tr || !draggedId || tr.dataset.id === draggedId) return;
-      const ids = [...rowsEl.querySelectorAll("tr")].map(r => r.dataset.id);
-      ids.splice(ids.indexOf(tr.dataset.id), 0, ids.splice(ids.indexOf(draggedId), 1)[0]);
+      const card = e.target.closest(".job");
+      if (!card || !draggedId || card.dataset.id === draggedId) return;
+      const ids = [...listEl.querySelectorAll(".job")].map(c => c.dataset.id);
+      ids.splice(ids.indexOf(card.dataset.id), 0, ids.splice(ids.indexOf(draggedId), 1)[0]);
       draggedId = null;
       await fetch("/jobs/reorder", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -230,14 +288,13 @@
     });
 
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
-    refresh();    // мгновенная первая отрисовка
-    connectWS();  // дальше — живой поток по WebSocket
-    // Cookies: статус + загрузка файла cookies.txt.
+
+    // Cookies: статус + загрузка.
     async function refreshCookies() {
       try {
         const s = await (await fetch("/cookies")).json();
         document.getElementById("cookies-status").textContent =
-          s.present ? `загружены (${s.bytes} б)` : "не загружены";
+          s.present ? `загружены (${fmt(s.bytes)})` : "не загружены";
       } catch {}
     }
     document.getElementById("cookies").addEventListener("change", async e => {
@@ -246,9 +303,10 @@
       await fetch("/cookies", { method: "POST", body: await f.text() });
       refreshCookies();
     });
-    refreshCookies();
 
-    // PWA: регистрируем service worker (нужен для установки + share target на Android).
+    refresh();
+    connectWS();
+    refreshCookies();
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   </script>
 </body>

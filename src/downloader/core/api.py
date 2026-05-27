@@ -146,6 +146,15 @@ def _merge_live(job: DownloadJob, sched: Scheduler) -> DownloadJob:
     return job
 
 
+def _payload(job: DownloadJob, sched: Scheduler) -> dict:
+    """Задача для UI: поля БД + живые speed/eta из планировщика."""
+    data = _merge_live(job, sched).model_dump(mode="json")
+    ev = sched.progress.get(job.id)
+    data["speed"] = ev.speed if ev else None
+    data["eta"] = ev.eta if ev else None
+    return data
+
+
 async def _resolve(conn, sched: Scheduler, job_id: str) -> DownloadJob:
     """Найти задачу по полному id или однозначному префиксу."""
     job = await jobs_repo.get_job(conn, job_id)
@@ -231,7 +240,7 @@ async def ws_jobs(websocket: WebSocket) -> None:
     try:
         while True:
             jobs = await jobs_repo.list_jobs(conn)
-            payload = [_merge_live(j, sched).model_dump(mode="json") for j in jobs]
+            payload = [_payload(j, sched) for j in jobs]
             await websocket.send_json(payload)
             await asyncio.sleep(0.5)
     except WebSocketDisconnect:
@@ -239,14 +248,15 @@ async def ws_jobs(websocket: WebSocket) -> None:
 
 
 @app.get("/jobs")
-async def list_jobs() -> list[DownloadJob]:
+async def list_jobs() -> list[dict]:
     conn, sched = app.state.conn, app.state.scheduler
-    return [_merge_live(j, sched) for j in await jobs_repo.list_jobs(conn)]
+    return [_payload(j, sched) for j in await jobs_repo.list_jobs(conn)]
 
 
 @app.get("/jobs/{job_id}")
-async def get_job(job_id: str) -> DownloadJob:
-    return await _resolve(app.state.conn, app.state.scheduler, job_id)
+async def get_job(job_id: str) -> dict:
+    sched = app.state.scheduler
+    return _payload(await _resolve(app.state.conn, sched, job_id), sched)
 
 
 @app.post("/jobs")
@@ -283,17 +293,16 @@ async def pause_job(job_id: str) -> DownloadJob:
 
 
 @app.post("/jobs/{job_id}/move")
-async def move_job(job_id: str, req: MoveRequest) -> list[DownloadJob]:
+async def move_job(job_id: str, req: MoveRequest) -> list[dict]:
     conn, sched = app.state.conn, app.state.scheduler
     job = await _resolve(conn, sched, job_id)
-    jobs = await jobs_repo.list_jobs(conn)
-    ids = [j.id for j in jobs]
+    ids = [j.id for j in await jobs_repo.list_jobs(conn)]
     idx = ids.index(job.id)
     k = idx - 1 if req.direction == "up" else idx + 1
     if 0 <= k < len(ids):
         ids[idx], ids[k] = ids[k], ids[idx]
         await jobs_repo.reorder(conn, ids)
-    return [_merge_live(j, sched) for j in await jobs_repo.list_jobs(conn)]
+    return [_payload(j, sched) for j in await jobs_repo.list_jobs(conn)]
 
 
 @app.post("/jobs/reorder")
