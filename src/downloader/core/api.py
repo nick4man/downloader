@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from downloader import __version__
@@ -78,6 +79,15 @@ async def _resolve(conn, sched: Scheduler, job_id: str) -> DownloadJob:
         else:
             raise HTTPException(409, f"Префикс '{job_id}' неоднозначен")
     return _merge_live(job, sched)
+
+
+_INDEX_HTML = (Path(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> str:
+    """Веб-интерфейс (опрашивает /jobs)."""
+    return _INDEX_HTML
 
 
 @app.get("/health")

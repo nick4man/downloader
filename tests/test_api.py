@@ -32,6 +32,13 @@ def test_health(client) -> None:
     assert client.get("/health").json()["ok"] is True
 
 
+def test_web_ui_served(client) -> None:
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "downloader" in r.text and "/jobs" in r.text  # страница опрашивает API
+
+
 def test_add_list_get(client) -> None:
     job = client.post("/jobs", json={"url": "https://youtube.com/watch?v=x"}).json()
     assert job["kind"] == "media"

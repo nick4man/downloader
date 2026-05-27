@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>downloader</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #14161a; color: #e6e6e6; }
+    header { padding: 14px 20px; background: #1d2026; display: flex; gap: 12px; align-items: center; }
+    header h1 { font-size: 18px; margin: 0; flex: 0 0 auto; }
+    #url { flex: 1; padding: 8px 10px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #e6e6e6; }
+    #quality { width: 90px; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #e6e6e6; }
+    button { padding: 8px 12px; border: 0; border-radius: 6px; background: #3b82f6; color: #fff; cursor: pointer; }
+    button.ghost { background: #2a2e36; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #23262d; font-size: 14px; vertical-align: middle; }
+    th { color: #8b929e; font-weight: 600; }
+    td.name { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    td.url { color: #6b7280; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    progress { width: 140px; height: 12px; }
+    .state { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+    .queued { background: #1e3a5f; } .running { background: #5a4a00; }
+    .paused { background: #334; } .completed { background: #14532d; }
+    .error { background: #5c1a1a; } .canceled { background: #333; }
+    .empty { padding: 40px; text-align: center; color: #6b7280; }
+    .act { background: none; color: #9aa3af; padding: 4px 8px; }
+    .act:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⬇ downloader</h1>
+    <input id="url" placeholder="Вставь ссылку и Enter…" autofocus>
+    <input id="quality" type="number" placeholder="кач-во">
+    <button onclick="addJob()">Добавить</button>
+  </header>
+  <table>
+    <thead><tr><th>Имя / URL</th><th>Статус</th><th>Прогресс</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div id="empty" class="empty" hidden>Очередь пуста. Добавь ссылку выше.</div>
+
+  <script>
+    const fmt = n => {
+      if (!n) return "—";
+      const u = ["Б", "КиБ", "МиБ", "ГиБ"]; let i = 0;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return n.toFixed(i ? 1 : 0) + " " + u[i];
+    };
+
+    async function refresh() {
+      let jobs;
+      try { jobs = await (await fetch("/jobs")).json(); }
+      catch { return; }
+      const rows = document.getElementById("rows");
+      document.getElementById("empty").hidden = jobs.length > 0;
+      rows.innerHTML = jobs.map(j => {
+        const pct = j.bytes_total ? Math.round(100 * j.bytes_done / j.bytes_total) : null;
+        const bar = j.state === "running"
+          ? `<progress max="100" ${pct != null ? `value="${pct}"` : ""}></progress> ${pct != null ? pct + "%" : fmt(j.bytes_done)}`
+          : (j.state === "completed" ? fmt(j.bytes_total || j.bytes_done) : "—");
+        const id = j.id.slice(0, 8);
+        const canPause = j.state === "queued";
+        const canResume = j.state === "paused" || j.state === "error";
+        return `<tr>
+          <td class="name" title="${j.url}">${j.filename || "—"}<br><span class="url">${j.url}</span></td>
+          <td><span class="state ${j.state}">${j.state}</span></td>
+          <td>${bar}</td>
+          <td>
+            ${canPause ? `<button class="act" onclick="act('${j.id}','pause')">⏸</button>` : ""}
+            ${canResume ? `<button class="act" onclick="act('${j.id}','resume')">▶</button>` : ""}
+            <button class="act" onclick="rm('${j.id}')">🗑</button>
+          </td>
+        </tr>`;
+      }).join("");
+    }
+
+    async function addJob() {
+      const url = document.getElementById("url").value.trim();
+      if (!url) return;
+      const q = document.getElementById("quality").value;
+      await fetch("/jobs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, quality: q ? +q : null }),
+      });
+      document.getElementById("url").value = "";
+      refresh();
+    }
+
+    async function act(id, verb) { await fetch(`/jobs/${id}/${verb}`, { method: "POST" }); refresh(); }
+    async function rm(id) { await fetch(`/jobs/${id}`, { method: "DELETE" }); refresh(); }
+
+    document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>
