@@ -25,6 +25,7 @@ async def run_job(
     ui_progress: ProgressCallback = noop_progress,
     *,
     connections: int = 16,
+    cookies: str | None = None,
 ) -> None:
     """Выполнить задачу: подготовить, скачать, зафиксировать итог в БД."""
     # Доопределяем тип/движок/имя, если их ещё нет (первый запуск задачи).
@@ -73,6 +74,7 @@ async def run_job(
                 on_progress,
                 job_id=job.id,
                 name=job.filename,
+                cookies=cookies,
             )
         elif job.engine is Engine.FFMPEG:
             result = await ffmpeg.hls_to_mp4(

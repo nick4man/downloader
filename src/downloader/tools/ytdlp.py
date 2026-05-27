@@ -130,9 +130,10 @@ def _format_from_dict(d: dict) -> Format:
     )
 
 
-async def probe(url: str) -> MediaInfo:
+async def probe(url: str, cookies: str | None = None) -> MediaInfo:
     """Получить метаданные и форматы медиа через `yt-dlp -J <url>`."""
-    info = await _run_json([*_base_args(), "-J", "--no-warnings", url])
+    cookies_arg = ["--cookies", cookies] if cookies else []
+    info = await _run_json([*_base_args(), "-J", "--no-warnings", *cookies_arg, url])
     formats = [_format_from_dict(f) for f in info.get("formats", [])]
     return MediaInfo(
         url=url,
@@ -158,17 +159,20 @@ async def download(
     *,
     job_id: str = "",
     name: str | None = None,
+    cookies: str | None = None,
 ) -> Path | None:
     """Скачать медиа через yt-dlp с выбранным форматом и метаданными.
 
     `name` задаёт имя файла (без расширения); если не задан — берётся из
     `%(title)s` (нужно, когда качаем сырой m3u8, где заголовка нет).
+    `cookies` — путь к cookies.txt (для age-gate/приватного контента).
     Возвращает путь к итоговому файлу (через `--print after_move:filepath`)
     или None, если путь не удалось определить.
     """
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     stem = name if name else "%(title)s"
+    cookies_arg = ["--cookies", cookies] if cookies else []
     # yt-dlp нужен ffmpeg для склейки/ремукса (HLS, merge видео+аудио). Наш
     # ffmpeg из static-ffmpeg не на PATH — указываем каталог явно.
     ffmpeg_loc: list[str] = []
@@ -199,6 +203,7 @@ async def download(
         "--embed-thumbnail",
         "--no-simulate",
         *ffmpeg_loc,
+        *cookies_arg,
         "--print",
         "after_move:filepath",
         url,

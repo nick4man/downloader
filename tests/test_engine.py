@@ -23,7 +23,7 @@ async def conn():
 async def test_run_pending_skips_paused_and_resumes_stale(conn, monkeypatch) -> None:
     ran: list[str] = []
 
-    async def fake_run_job(c, job, ui, *, connections=16):
+    async def fake_run_job(c, job, ui, **kwargs):
         ran.append(job.id)
         await jobs_repo.set_state(c, job.id, JobState.COMPLETED)
 
@@ -53,7 +53,7 @@ async def test_run_pending_skips_paused_and_resumes_stale(conn, monkeypatch) -> 
 async def test_emits_start_event_for_status_line(conn, monkeypatch) -> None:
     events: list = []
 
-    async def fake_run_job(c, job, ui, *, connections=16):
+    async def fake_run_job(c, job, ui, **kwargs):
         await jobs_repo.set_state(c, job.id, JobState.COMPLETED)
 
     monkeypatch.setattr("downloader.core.engine.run_job", fake_run_job)

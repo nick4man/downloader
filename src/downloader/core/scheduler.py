@@ -12,7 +12,7 @@ import asyncio
 
 import aiosqlite
 
-from downloader.config import Config
+from downloader.config import Config, effective_cookies
 from downloader.core.worker import run_job
 from downloader.models import JobState, ProgressEvent
 from downloader.store import jobs_repo
@@ -83,6 +83,7 @@ class Scheduler:
                             job,
                             self._on_progress,
                             connections=self.config.connections,
+                            cookies=effective_cookies(self.config),
                         )
                     )
                     self._active[job_id] = task

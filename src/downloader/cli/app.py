@@ -11,7 +11,7 @@ from rich.table import Table
 
 from downloader import __version__
 from downloader.cli import render
-from downloader.config import load_config
+from downloader.config import effective_cookies, load_config
 from downloader.core import api_client
 from downloader.core import daemon as daemon_mod
 from downloader.core import service as service_mod
@@ -105,7 +105,7 @@ def formats(url: str) -> None:
 
 async def _formats(url: str) -> None:
     try:
-        media = await ytdlp.probe(url)
+        media = await ytdlp.probe(url, cookies=effective_cookies(load_config()))
     except Exception as exc:  # noqa: BLE001 — показываем понятную ошибку, не трейсбек
         console.print(f"[red]Не удалось получить форматы: {exc}[/red]")
         raise typer.Exit(1) from None

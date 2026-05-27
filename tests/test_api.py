@@ -40,6 +40,18 @@ def test_cors_allows_cross_origin(client) -> None:
     assert r.headers.get("access-control-allow-origin") in ("*", "https://youtube.com")
 
 
+def test_cookies_upload_status_delete(client, monkeypatch, tmp_path) -> None:
+    import downloader.core.api as api
+
+    monkeypatch.setattr(api, "COOKIES_PATH", tmp_path / "cookies.txt")
+    assert client.get("/cookies").json()["present"] is False
+    r = client.post("/cookies", content=b"# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\n")
+    assert r.json()["ok"] is True and r.json()["bytes"] > 0
+    assert client.get("/cookies").json()["present"] is True
+    client.delete("/cookies")
+    assert client.get("/cookies").json()["present"] is False
+
+
 def test_reload(client) -> None:
     r = client.post("/reload").json()
     assert r["ok"] is True

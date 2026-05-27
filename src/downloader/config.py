@@ -19,6 +19,7 @@ CONFIG_DIR = _xdg("XDG_CONFIG_HOME", Path.home() / ".config") / "downloader"
 DATA_DIR = _xdg("XDG_DATA_HOME", Path.home() / ".local" / "share") / "downloader"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 DB_PATH = DATA_DIR / "downloader.db"
+COOKIES_PATH = DATA_DIR / "cookies.txt"  # куда сохраняется загруженный cookies.txt
 
 
 class Config(BaseModel):
@@ -34,6 +35,7 @@ class Config(BaseModel):
     # Origin'ы, которым разрешён CORS (для букмарклета/расширения с чужих сайтов).
     # '*' удобно для личного инструмента; ужесточай списком сайтов при необходимости.
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    cookies_file: str | None = None  # путь к cookies.txt (Netscape); None → COOKIES_PATH
 
     def dump_toml(self) -> str:
         """Сериализовать в TOML (без сторонних зависимостей)."""
@@ -68,7 +70,14 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
         config.max_concurrent = int(mc)
     if cors := os.environ.get("DOWNLOADER_CORS"):
         config.cors_origins = [o.strip() for o in cors.split(",") if o.strip()]
+    config.cookies_file = os.environ.get("DOWNLOADER_COOKIES", config.cookies_file)
     return config
+
+
+def effective_cookies(config: Config) -> str | None:
+    """Путь к cookies.txt, если файл реально существует (для yt-dlp --cookies)."""
+    path = Path(config.cookies_file) if config.cookies_file else COOKIES_PATH
+    return str(path) if path.exists() else None
 
 
 def save_config(config: Config, path: Path = CONFIG_PATH) -> None:

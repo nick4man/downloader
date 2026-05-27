@@ -50,6 +50,11 @@
     <span style="margin-left:10px;">или поставь
       <a href="https://github.com/nick4man/downloader/tree/main/extension" style="color:#3b82f6;">расширение</a>
       (правый клик → отправить).</span>
+    <div style="margin-top:10px;">
+      🍪 Cookies (для приватного / age-gate):
+      <input type="file" id="cookies" accept=".txt" style="color:#9aa3af;">
+      <span id="cookies-status" style="color:#9aa3af;"></span>
+    </div>
   </footer>
 
   <script>
@@ -140,6 +145,22 @@
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
     refresh();    // мгновенная первая отрисовка
     connectWS();  // дальше — живой поток по WebSocket
+    // Cookies: статус + загрузка файла cookies.txt.
+    async function refreshCookies() {
+      try {
+        const s = await (await fetch("/cookies")).json();
+        document.getElementById("cookies-status").textContent =
+          s.present ? `загружены (${s.bytes} б)` : "не загружены";
+      } catch {}
+    }
+    document.getElementById("cookies").addEventListener("change", async e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      await fetch("/cookies", { method: "POST", body: await f.text() });
+      refreshCookies();
+    });
+    refreshCookies();
+
     // PWA: регистрируем service worker (нужен для установки + share target на Android).
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   </script>

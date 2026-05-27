@@ -11,13 +11,13 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from downloader import __version__
-from downloader.config import load_config
+from downloader.config import COOKIES_PATH, load_config
 from downloader.core.scheduler import Scheduler
 from downloader.models import DownloadJob, JobState
 from downloader.services.intake import build_job
@@ -267,6 +267,28 @@ async def dedup() -> list[dict]:
         for sha, js in groups.items()
         if len(js) > 1
     ]
+
+
+@app.get("/cookies")
+async def cookies_status() -> dict:
+    """Загружен ли cookies.txt (для age-gate/приватного контента)."""
+    size = COOKIES_PATH.stat().st_size if COOKIES_PATH.exists() else 0
+    return {"present": COOKIES_PATH.exists(), "bytes": size}
+
+
+@app.post("/cookies")
+async def upload_cookies(request: Request) -> dict:
+    """Сохранить присланный cookies.txt (Netscape-формат) — тело запроса = файл."""
+    raw = await request.body()
+    COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    COOKIES_PATH.write_bytes(raw)
+    return {"ok": True, "bytes": len(raw)}
+
+
+@app.delete("/cookies")
+async def delete_cookies() -> dict:
+    COOKIES_PATH.unlink(missing_ok=True)
+    return {"ok": True}
 
 
 @app.post("/reload")

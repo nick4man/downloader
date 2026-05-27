@@ -22,6 +22,15 @@ def test_env_overrides_config(monkeypatch, tmp_path: Path) -> None:
     assert cfg.cors_origins == ["https://a.com", "https://b.com"]
 
 
+def test_effective_cookies(monkeypatch, tmp_path) -> None:
+    cookies = tmp_path / "c.txt"
+    monkeypatch.setenv("DOWNLOADER_COOKIES", str(cookies))
+    cfg = config.load_config(tmp_path / "absent.toml")
+    assert config.effective_cookies(cfg) is None  # файла ещё нет
+    cookies.write_text("# Netscape HTTP Cookie File\n")
+    assert config.effective_cookies(cfg) == str(cookies)  # появился → отдаём путь
+
+
 def test_ffmpeg_dir_env(monkeypatch) -> None:
     monkeypatch.setenv("DOWNLOADER_FFMPEG_DIR", "/usr/bin")
     assert base.resolve_binary("ffmpeg") == "/usr/bin/ffmpeg"

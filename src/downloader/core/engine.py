@@ -6,7 +6,7 @@ import asyncio
 
 import aiosqlite
 
-from downloader.config import Config
+from downloader.config import Config, effective_cookies
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.core.worker import run_job
 from downloader.models import DownloadJob, JobState, ProgressEvent
@@ -52,7 +52,13 @@ class Engine:
                 return
             # Сразу показываем строку состояния (до первого байтового события).
             ui_progress(ProgressEvent(job_id=job.id, msg=_label(job)))
-            await run_job(self.conn, job, ui_progress, connections=self.config.connections)
+            await run_job(
+                self.conn,
+                job,
+                ui_progress,
+                connections=self.config.connections,
+                cookies=effective_cookies(self.config),
+            )
 
     async def _reset_stale_running(self) -> None:
         """Сбросить зависшие running → queued (процесс прервали ранее)."""
