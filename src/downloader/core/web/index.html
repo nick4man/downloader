@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14161a">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg">
   <title>downloader</title>
   <style>
     :root { color-scheme: dark; }
@@ -137,6 +140,8 @@
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
     refresh();    // мгновенная первая отрисовка
     connectWS();  // дальше — живой поток по WebSocket
+    // PWA: регистрируем service worker (нужен для установки + share target на Android).
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   </script>
 </body>
 </html>

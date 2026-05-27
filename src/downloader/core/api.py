@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from downloader import __version__
@@ -22,6 +22,7 @@ from downloader.core.scheduler import Scheduler
 from downloader.models import DownloadJob, JobState
 from downloader.services.intake import build_job
 from downloader.services.naming import sanitize_filename
+from downloader.services.scrape import extract_urls
 from downloader.store import jobs_repo
 from downloader.store.db import connect
 
@@ -98,13 +99,46 @@ async def _resolve(conn, sched: Scheduler, job_id: str) -> DownloadJob:
     return _merge_live(job, sched)
 
 
-_INDEX_HTML = (Path(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+_WEB = Path(__file__).parent / "web"
+_INDEX_HTML = (_WEB / "index.html").read_text(encoding="utf-8")
+_MANIFEST = (_WEB / "manifest.webmanifest").read_text(encoding="utf-8")
+_SW = (_WEB / "sw.js").read_text(encoding="utf-8")
+_ICON = (_WEB / "icon.svg").read_text(encoding="utf-8")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index() -> str:
     """Веб-интерфейс (опрашивает /jobs)."""
     return _INDEX_HTML
+
+
+@app.get("/manifest.webmanifest")
+async def manifest() -> Response:
+    return Response(_MANIFEST, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker() -> Response:
+    return Response(_SW, media_type="application/javascript")
+
+
+@app.get("/icon.svg")
+async def icon() -> Response:
+    return Response(_ICON, media_type="image/svg+xml")
+
+
+@app.get("/share")
+async def share(url: str = "", text: str = "", title: str = "") -> RedirectResponse:
+    """Web Share Target (Android PWA): принять расшаренный URL и поставить в очередь.
+
+    Android кладёт ссылку то в `url`, то в `text` — достаём из всех полей.
+    """
+    candidates = [url, *extract_urls(text), *extract_urls(title)]
+    target = next((u for u in candidates if u.startswith("http")), None)
+    if target:
+        job = build_job(target, app.state.config)
+        await jobs_repo.add_job(app.state.conn, job)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/health")

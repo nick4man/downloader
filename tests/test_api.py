@@ -54,6 +54,22 @@ def test_websocket_streams_jobs(client) -> None:
         assert any(j["url"] == "https://e.com/f.zip" for j in data)
 
 
+def test_share_target_adds_job(client) -> None:
+    # Android-шаринг кладёт ссылку в text — должны её извлечь и поставить в очередь.
+    r = client.get(
+        "/share", params={"text": "смотри https://youtu.be/abc крутое"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    assert any("youtu.be/abc" in j["url"] for j in client.get("/jobs").json())
+
+
+def test_pwa_assets_served(client) -> None:
+    m = client.get("/manifest.webmanifest")
+    assert m.status_code == 200 and "share_target" in m.text
+    assert client.get("/sw.js").status_code == 200
+    assert client.get("/icon.svg").headers["content-type"].startswith("image/svg")
+
+
 def test_web_ui_served(client) -> None:
     r = client.get("/")
     assert r.status_code == 200
