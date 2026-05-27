@@ -100,6 +100,9 @@ def test_share_target_adds_job(client) -> None:
     r = client.get("/share", params={"text": "смотри https://youtu.be/abc крутое"})
     assert r.status_code == 200 and "Отправлено" in r.text  # страница-подтверждение
     assert any("youtu.be/abc" in j["url"] for j in client.get("/jobs").json())
+    # путь iOS-шортката: ссылка в параметре url
+    client.get("/share", params={"url": "https://vimeo.com/12345"})
+    assert any("vimeo.com/12345" in j["url"] for j in client.get("/jobs").json())
 
 
 def test_pwa_assets_served(client) -> None:
