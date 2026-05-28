@@ -171,7 +171,7 @@
     #list { margin-top: 28px; }
     .job {
       display: grid;
-      grid-template-columns: 24px 56px 1fr 230px 64px auto;
+      grid-template-columns: 24px 52px minmax(0,1fr) 300px 70px auto;
       gap: 16px;
       align-items: center;
       padding: 14px 18px;
@@ -238,11 +238,15 @@
       to { background-position: 17px 0; }
     }
     .pstats {
-      font-size: 11px; color: var(--mute);
+      font-size: 11px; color: var(--ink);
       letter-spacing: 0.02em;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       font-feature-settings: "tnum";
     }
+    .job[data-state="queued"] .pstats,
+    .job[data-state="paused"] .pstats,
+    .job[data-state="canceled"] .pstats { color: var(--mute); }
+    .job[data-state="completed"] .pstats { color: var(--ok); }
 
     .stamp {
       font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
@@ -288,25 +292,30 @@
 
     /* FOOTER */
     footer {
-      margin-top: 40px; padding-top: 18px;
-      border-top: 2px solid var(--line);
-      color: var(--mute);
-      font-size: 11px;
-      letter-spacing: 0.02em;
-      display: flex; flex-direction: column; gap: 10px;
+      margin-top: 36px;
+      border: 1px solid var(--line);
+      background: var(--paper3);
+      font-size: 12px;
     }
-    footer .tag {
-      display: inline-block;
-      text-transform: uppercase; letter-spacing: 0.14em;
-      color: var(--ink); font-weight: 700; margin-right: 8px;
+    .frow {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 16px; align-items: center;
+      padding: 12px 16px;
     }
+    .frow + .frow { border-top: 1px solid var(--hairline); }
+    .frow .tag {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--mute); font-weight: 700;
+    }
+    .frow .body { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
     footer a {
-      color: var(--ink); border-bottom: 1px solid currentColor;
+      color: var(--ink); border-bottom: 1px solid var(--hairline);
       text-decoration: none; padding-bottom: 1px;
     }
-    footer a:hover { color: var(--amber); }
-    .frow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    #cookies { font: 11px "JetBrains Mono", monospace; color: var(--ink); }
+    footer a:hover { color: var(--amber); border-color: var(--amber); }
+    .sep { color: var(--hairline); }
+    #cookies { font: 11px "JetBrains Mono", monospace; color: var(--ink); max-width: 200px; }
     #cookies-status {
       font-size: 10px; text-transform: uppercase;
       letter-spacing: 0.12em; color: var(--mute);
@@ -402,23 +411,32 @@
 
     <footer>
       <div class="frow">
-        <span class="tag">OUT</span>
-        📎 <a id="blet" href="#">букмарклет</a>
-        <a href="https://github.com/nick4man/downloader/tree/main/extension">расширение</a>
-        <a href="https://github.com/nick4man/downloader/blob/main/IOS.md">iOS-ярлык</a>
+        <span class="tag">Отправка</span>
+        <div class="body">
+          📎 <a id="blet" href="#">букмарклет</a>
+          <span class="sep">|</span>
+          <a href="https://github.com/nick4man/downloader/tree/main/extension">расширение для браузера</a>
+          <span class="sep">|</span>
+          <a href="https://github.com/nick4man/downloader/blob/main/IOS.md">iOS-ярлык</a>
+        </div>
       </div>
       <div class="frow">
-        <span class="tag">QUEUE</span>
-        <a href="/jobs/export" download>экспорт списка ▼</a>
-        <span>· очистить:</span>
-        <button class="mini" onclick="clearJobs('error')">ОШИБКИ</button>
-        <button class="mini" onclick="clearJobs('completed')">ЗАВЕРШЁННЫЕ</button>
-        <button class="mini danger" onclick="clearJobs('all')">ВСЁ</button>
+        <span class="tag">Очередь</span>
+        <div class="body">
+          <a href="/jobs/export" download>⤓ экспорт списка</a>
+          <span class="sep">|</span>
+          <span style="color:var(--mute)">очистить:</span>
+          <button class="mini" onclick="clearJobs('completed')">завершённые</button>
+          <button class="mini" onclick="clearJobs('error')">с ошибкой</button>
+          <button class="mini danger" onclick="clearJobs('all')">всё</button>
+        </div>
       </div>
       <div class="frow">
-        <span class="tag">COOKIES</span>
-        <input type="file" id="cookies" accept=".txt">
-        <span id="cookies-status"></span>
+        <span class="tag">Cookies</span>
+        <div class="body">
+          <input type="file" id="cookies" accept=".txt">
+          <span id="cookies-status"></span>
+        </div>
       </div>
     </footer>
   </div>
@@ -435,25 +453,48 @@
 
     let lastSig = "";
 
+    function eta(s) {
+      s = Math.round(s);
+      if (s < 60) return s + "с";
+      if (s < 3600) return Math.floor(s / 60) + "м " + (s % 60) + "с";
+      return Math.floor(s / 3600) + "ч " + Math.floor((s % 3600) / 60) + "м";
+    }
+
+    // Человекочитаемый статус для ЛЮБОГО состояния задачи.
     function liveFields(j) {
       const pct = j.bytes_total ? Math.min(100, Math.round(100 * j.bytes_done / j.bytes_total))
                                 : (j.state === "completed" ? 100 : 0);
-      const stats = [];
-      if (j.bytes_total) stats.push(fmt(j.bytes_done) + " / " + fmt(j.bytes_total));
-      else if (j.bytes_done) stats.push(fmt(j.bytes_done));
-      if (j.speed) stats.push(fmt(j.speed) + "/s");
-      if (j.eta) stats.push("ETA " + Math.round(j.eta) + "s");
-      return { pct, stats: stats.join(" · ") || "—" };
+      let status;
+      switch (j.state) {
+        case "queued":  status = "⏳ ожидает в очереди"; break;
+        case "paused":  status = "⏸ на паузе"; break;
+        case "canceled": status = "⊘ отменён"; break;
+        case "error":   status = "✗ ошибка — см. ниже"; break;
+        case "completed":
+          status = "✓ готово · " + fmt(j.bytes_total || j.bytes_done); break;
+        case "running": {
+          if (!j.bytes_done) { status = "⟳ подключение…"; break; }
+          const p = [];
+          p.push(j.bytes_total ? `${pct}% · ${fmt(j.bytes_done)} / ${fmt(j.bytes_total)}`
+                               : fmt(j.bytes_done));
+          if (j.speed) p.push("↓ " + fmt(j.speed) + "/с");
+          p.push(j.eta ? "осталось " + eta(j.eta) : (j.speed ? "" : "ожидание данных…"));
+          status = p.filter(Boolean).join("  ·  ");
+          break;
+        }
+        default: status = j.state;
+      }
+      return { pct, status };
     }
 
     function softUpdate(j) {
       const card = document.querySelector(`.job[data-id="${j.id}"]`);
       if (!card) return false;
-      const { pct, stats } = liveFields(j);
+      const { pct, status } = liveFields(j);
       const fill = card.querySelector(".fill");
       if (fill) fill.style.width = pct + "%";
       const pst = card.querySelector(".pstats");
-      if (pst) pst.textContent = stats;
+      if (pst) pst.textContent = status;
       return true;
     }
 
@@ -475,7 +516,7 @@
       }
       lastSig = sig;
       document.getElementById("list").innerHTML = jobs.map((j, i) => {
-        const { pct, stats } = liveFields(j);
+        const { pct, status } = liveFields(j);
         const canPause = j.state === "queued" || j.state === "running";
         const canResume = j.state === "paused" || j.state === "error";
         const seq = "#" + String(i + 1).padStart(3, "0");
@@ -492,7 +533,7 @@
           </div>
           <div class="progress">
             <div class="track"><div class="fill" style="width:${pct}%"></div></div>
-            <div class="pstats">${stats}</div>
+            <div class="pstats">${status}</div>
           </div>
           <span class="stamp">${STAMPS[j.state] || j.state.toUpperCase()}</span>
           <div class="acts">

@@ -23,6 +23,18 @@ def test_dlprog_unknown_total() -> None:
     assert ev.percent is None
 
 
+def test_dlprog_speed_eta() -> None:
+    ev = _parse_dlprog("DLPROG 1024 132579480.0 2516582.0 52.0", job_id="J")
+    assert ev.speed == 2516582.0
+    assert ev.eta == 52.0
+
+
+def test_dlprog_speed_eta_na() -> None:
+    ev = _parse_dlprog("DLPROG 1024 NA NA NA")  # начало закачки — speed/eta ещё NA
+    assert ev.bytes_done == 1024
+    assert ev.speed is None and ev.eta is None
+
+
 def test_dlprog_float_estimate() -> None:
     # total_bytes_estimate приходит float-ом ('132.0') — должен парситься.
     ev = _parse_dlprog("DLPROG 1024 132579480.0")

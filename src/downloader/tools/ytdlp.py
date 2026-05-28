@@ -35,10 +35,11 @@ _PROGRESS = re.compile(
 _UNITS = {"B": 1, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
 _UNITS.update({"KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4})
 
-# Шаблон машинного прогресса: 'DLPROG <скачано> <всего|оценка>'.
+# Шаблон машинного прогресса: 'DLPROG <скачано> <всего|оценка> <скорость> <eta>'.
 _PROGRESS_TEMPLATE = (
     "DLPROG %(progress.downloaded_bytes)s "
-    "%(progress.total_bytes,progress.total_bytes_estimate)s"
+    "%(progress.total_bytes,progress.total_bytes_estimate)s "
+    "%(progress.speed)s %(progress.eta)s"
 )
 # После переноса файла печатаем метаданные одной строкой (поля через таб).
 _META_TEMPLATE = "after_move:DLMETA\t%(extractor)s\t%(id)s\t%(height)s\t%(filepath)s"
@@ -92,8 +93,16 @@ def _to_int(value: str) -> int | None:
         return None
 
 
+def _to_float(value: str) -> float | None:
+    """'123.4' → float; 'NA'/мусор → None (yt-dlp пишет NA для неизвестных)."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _parse_dlprog(line: str, job_id: str = "") -> ProgressEvent | None:
-    """Разобрать машинную строку `DLPROG <done> <total>` от --progress-template."""
+    """Разобрать `DLPROG <done> <total> [speed] [eta]` от --progress-template."""
     parts = line.split()
     if len(parts) < 3:
         return None
@@ -105,6 +114,8 @@ def _parse_dlprog(line: str, job_id: str = "") -> ProgressEvent | None:
         job_id=job_id,
         bytes_done=done,
         bytes_total=total,
+        speed=_to_float(parts[3]) if len(parts) > 3 else None,
+        eta=_to_float(parts[4]) if len(parts) > 4 else None,
         percent=(100 * done / total) if total else None,
     )
 
