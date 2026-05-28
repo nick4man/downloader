@@ -171,6 +171,22 @@ def test_move_reorder(client) -> None:
     assert [j["id"] for j in client.get("/jobs").json()] == [c, a, b]
 
 
+def test_export_jobs(client) -> None:
+    client.post("/jobs", json={"url": "https://e.com/a.zip"})
+    client.post("/jobs", json={"url": "https://e.com/b.zip"})
+    r = client.get("/jobs/export")
+    assert r.status_code == 200
+    assert "a.zip" in r.text and "b.zip" in r.text
+    assert "attachment" in r.headers["content-disposition"]
+
+
+def test_clear_by_state_all(client) -> None:
+    for x in "abc":
+        client.post("/jobs", json={"url": f"https://e.com/{x}.zip"})
+    assert client.delete("/jobs?state=all").json()["removed"] >= 3
+    assert client.get("/jobs").json() == []
+
+
 def test_reorder_endpoint(client) -> None:
     a = client.post("/jobs", json={"url": "https://e.com/a.zip"}).json()["id"]
     b = client.post("/jobs", json={"url": "https://e.com/b.zip"}).json()["id"]

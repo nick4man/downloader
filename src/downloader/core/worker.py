@@ -76,6 +76,7 @@ async def run_job(
                 name=job.filename,
                 cookies=cookies,
                 audio=job.audio,
+                meta_title=title,  # title из resolve_source — перетирает «hls»
             )
             result = dl.path
             job.source_id = dl.source_id  # для дедупа по идентичности источника

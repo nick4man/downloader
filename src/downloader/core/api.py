@@ -14,7 +14,13 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from pydantic import BaseModel
 
 from downloader import __version__
@@ -251,6 +257,38 @@ async def ws_jobs(websocket: WebSocket) -> None:
 async def list_jobs() -> list[dict]:
     conn, sched = app.state.conn, app.state.scheduler
     return [_payload(j, sched) for j in await jobs_repo.list_jobs(conn)]
+
+
+@app.get("/jobs/export", response_class=PlainTextResponse)
+async def export_jobs() -> PlainTextResponse:
+    """Список URL построчно — для бэкапа / повторного `dl import`.
+    Обязан стоять ВЫШЕ /jobs/{job_id}, иначе матчится как job_id='export'."""
+    jobs = await jobs_repo.list_jobs(app.state.conn)
+    body = "\n".join(j.url for j in jobs) + "\n"
+    return PlainTextResponse(
+        body,
+        headers={"Content-Disposition": 'attachment; filename="downloader-queue.txt"'},
+    )
+
+
+@app.delete("/jobs")
+async def clear_jobs(state: str | None = None) -> dict:
+    """Массовая очистка по state (error/completed/queued/paused/canceled) или
+    ?state=all — вся очередь. Активные процессы отменяются."""
+    conn, sched = app.state.conn, app.state.scheduler
+    jobs = await jobs_repo.list_jobs(conn)
+    if state and state != "all":
+        jobs = [j for j in jobs if j.state.value == state]
+    removed = 0
+    for job in jobs:
+        sched.cancel(job.id)
+        await jobs_repo.delete_job(conn, job.id)
+        if job.filename:
+            target = Path(job.dest_dir) / job.filename
+            for suffix in (".part", ".aria2"):
+                target.with_suffix(target.suffix + suffix).unlink(missing_ok=True)
+        removed += 1
+    return {"removed": removed}
 
 
 @app.get("/jobs/{job_id}")

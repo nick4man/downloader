@@ -172,6 +172,7 @@ async def download(
     name: str | None = None,
     cookies: str | None = None,
     audio: bool = False,
+    meta_title: str | None = None,
 ) -> DownloadResult:
     """Скачать медиа через yt-dlp с выбранным форматом и метаданными.
 
@@ -192,6 +193,16 @@ async def download(
         ffmpeg_loc = ["--ffmpeg-location", str(Path(resolve_binary("ffmpeg")).parent)]
     # Аудио: извлекаем дорожку через ffmpeg (-x) в mp3; иначе — видео по -f.
     fmt_args = ["-x", "--audio-format", "mp3", "-f", "bestaudio/best"] if audio else ["-f", fmt]
+    # Перетираем title (если задан) и обнуляем comment: из info_dict сырого m3u8
+    # иначе попадает «hls» и временный CDN-URL с токеном.
+    embed_parts: list[str] = []
+    if meta_title:
+        embed_parts += ["-metadata", f"title={meta_title}"]
+    embed_parts += ["-metadata", "comment="]
+    pp_args = [
+        "--postprocessor-args",
+        "EmbedMetadata:" + " ".join(shlex.quote(p) for p in embed_parts),
+    ]
     args = [
         *_base_args(),
         *fmt_args,
@@ -214,6 +225,7 @@ async def download(
         _PROGRESS_TEMPLATE,
         "--embed-metadata",
         "--embed-thumbnail",
+        *pp_args,
         "--no-simulate",
         *ffmpeg_loc,
         *cookies_arg,
