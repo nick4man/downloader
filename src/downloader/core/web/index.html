@@ -203,6 +203,13 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       margin-top: 2px;
     }
+    .err-line {
+      font-size: 11px; color: var(--red); font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 4px; cursor: copy;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .err-line::before { content: "⚠ "; opacity: 0.7; }
     .progress { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
     .track {
       height: 10px; background: var(--paper2);
@@ -426,6 +433,30 @@
     const esc = s => (s || "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
     const STAMPS = { queued: "QUEUE", running: "RUN", paused: "PAUSE", completed: "DONE", error: "ERR", canceled: "CXL" };
 
+    let lastSig = "";
+
+    function liveFields(j) {
+      const pct = j.bytes_total ? Math.min(100, Math.round(100 * j.bytes_done / j.bytes_total))
+                                : (j.state === "completed" ? 100 : 0);
+      const stats = [];
+      if (j.bytes_total) stats.push(fmt(j.bytes_done) + " / " + fmt(j.bytes_total));
+      else if (j.bytes_done) stats.push(fmt(j.bytes_done));
+      if (j.speed) stats.push(fmt(j.speed) + "/s");
+      if (j.eta) stats.push("ETA " + Math.round(j.eta) + "s");
+      return { pct, stats: stats.join(" · ") || "—" };
+    }
+
+    function softUpdate(j) {
+      const card = document.querySelector(`.job[data-id="${j.id}"]`);
+      if (!card) return false;
+      const { pct, stats } = liveFields(j);
+      const fill = card.querySelector(".fill");
+      if (fill) fill.style.width = pct + "%";
+      const pst = card.querySelector(".pstats");
+      if (pst) pst.textContent = stats;
+      return true;
+    }
+
     function render(jobs) {
       if (window.__dragging) return;
       const counts = { queued: 0, running: 0, completed: 0, error: 0, paused: 0, canceled: 0 };
@@ -434,34 +465,41 @@
         document.getElementById("c-" + s).textContent = counts[s] || 0;
       });
       document.getElementById("empty").hidden = jobs.length > 0;
+
+      // Soft-update: при стабильном составе очереди обновляем только прогресс/stats,
+      // не трогая DOM (иначе hover моргает при каждом WS-тике 0.5с).
+      const sig = jobs.map(j => `${j.id}:${j.state}`).join("|");
+      if (sig && sig === lastSig) {
+        jobs.forEach(softUpdate);
+        return;
+      }
+      lastSig = sig;
       document.getElementById("list").innerHTML = jobs.map((j, i) => {
-        const pct = j.bytes_total ? Math.min(100, Math.round(100 * j.bytes_done / j.bytes_total))
-                                  : (j.state === "completed" ? 100 : 0);
-        const stats = [];
-        if (j.bytes_total) stats.push(fmt(j.bytes_done) + " / " + fmt(j.bytes_total));
-        else if (j.bytes_done) stats.push(fmt(j.bytes_done));
-        if (j.speed) stats.push(fmt(j.speed) + "/s");
-        if (j.eta) stats.push("ETA " + Math.round(j.eta) + "s");
+        const { pct, stats } = liveFields(j);
         const canPause = j.state === "queued" || j.state === "running";
         const canResume = j.state === "paused" || j.state === "error";
         const seq = "#" + String(i + 1).padStart(3, "0");
-        return `<div class="job" data-id="${j.id}" data-state="${j.state}" draggable="true">
+        const err = j.state === "error" && j.error
+          ? `<div class="err-line" title="${esc(j.error)} (клик — копировать)" onclick="copyErr('${j.id}')">${esc(j.error)}</div>`
+          : "";
+        return `<div class="job" data-id="${j.id}" data-state="${j.state}" data-error="${esc(j.error || "")}" draggable="true">
           <span class="grip" title="перетащить">≡</span>
           <span class="seq">${seq}</span>
           <div class="meta">
             <div class="name">${j.audio ? "♪ " : ""}${esc(j.filename) || "—"}</div>
             <div class="url">${esc(j.url)}</div>
+            ${err}
           </div>
           <div class="progress">
             <div class="track"><div class="fill" style="width:${pct}%"></div></div>
-            <div class="pstats">${stats.join(" · ") || "—"}</div>
+            <div class="pstats">${stats}</div>
           </div>
           <span class="stamp">${STAMPS[j.state] || j.state.toUpperCase()}</span>
           <div class="acts">
             <button class="act" onclick="move('${j.id}','up')" title="выше">↑</button>
             <button class="act" onclick="move('${j.id}','down')" title="ниже">↓</button>
             ${canPause ? `<button class="act" onclick="act('${j.id}','pause')" title="пауза">⏸</button>` : ""}
-            ${canResume ? `<button class="act" onclick="act('${j.id}','resume')" title="возобновить">▶</button>` : ""}
+            ${canResume ? `<button class="act" onclick="act('${j.id}','resume')" title="${j.state === 'error' ? 'повторить' : 'возобновить'}">▶</button>` : ""}
             <button class="act" onclick="rename('${j.id}')" title="переименовать">✎</button>
             <button class="act danger" onclick="rm('${j.id}')" title="удалить">×</button>
           </div>
@@ -518,6 +556,13 @@
       refresh();
     }
     async function rm(id) { await fetch(`/jobs/${id}`, { method: "DELETE" }); refresh(); }
+    async function copyErr(id) {
+      const card = document.querySelector(`.job[data-id="${id}"]`);
+      const text = card?.dataset.error || "";
+      if (!text) return;
+      try { await navigator.clipboard.writeText(text); alert("Скопировано:\n\n" + text); }
+      catch { alert(text); }
+    }
     async function clearJobs(state) {
       const label = { error: "ошибки", completed: "завершённые", all: "ВСЕ задачи" }[state] || state;
       if (!confirm(`Удалить ${label}?`)) return;
