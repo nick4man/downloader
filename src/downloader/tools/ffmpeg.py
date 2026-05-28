@@ -9,12 +9,47 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
+
+import httpx
 
 from downloader.core.events import ProgressCallback, noop_progress
 from downloader.models import ProgressEvent
 from downloader.tools.base import resolve_binary, terminate_if_alive
+
+
+async def embed_cover(video: Path, thumbnail_url: str) -> bool:
+    """Вшить обложку (картинку по URL) в MP4 как attached_pic. Best-effort.
+
+    Возвращает True при успехе. Любой сбой (нет сети/ffmpeg/кодек) — False,
+    задачу это не валит: обложка приятна, но не критична.
+    """
+    with contextlib.suppress(Exception):
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            resp = await client.get(thumbnail_url)
+            resp.raise_for_status()
+            cover = video.with_suffix(".cover.jpg")
+            cover.write_bytes(resp.content)
+        ffmpeg = resolve_binary("ffmpeg")
+        tmp = video.with_suffix(".cover.mp4")
+        # video из 0, обложка из 1 как вложенная картинка; потоки копируем.
+        args = [
+            ffmpeg, "-y", "-i", str(video), "-i", str(cover),
+            "-map", "0", "-map", "1", "-c", "copy",
+            "-disposition:v:1", "attached_pic", str(tmp),
+        ]  # fmt: skip
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+        )
+        code = await proc.wait()
+        cover.unlink(missing_ok=True)
+        if code == 0 and tmp.exists():
+            tmp.replace(video)  # атомарно заменяем оригинал версией с обложкой
+            return True
+        tmp.unlink(missing_ok=True)
+    return False
 
 
 async def probe(source: str) -> dict:

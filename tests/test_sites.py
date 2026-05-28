@@ -11,20 +11,29 @@ from downloader.services.sites import _parse_player
 def test_prefers_hls_master() -> None:
     html = """
     html5player.setVideoTitle('Cool Clip');
+    html5player.setUploaderName('BlackedRaw');
     html5player.setVideoUrlLow('https://cdn/x/mp4_sd.mp4?secure=a');
     html5player.setVideoUrlHigh('https://cdn/x/mp4_sd.mp4?secure=a');
     html5player.setVideoHLS('https://hls-cdn/x/hls.m3u8?secure=b');
+    <meta property="og:image" content="https://thumb/x.jpg">
+    <a href="/pornstars/kali-rose" class="x">Kali Rose</a>
+    <a href="/tags/anal" class="is-keyword">anal</a>
+    <a href="/tags/teen" class="is-keyword">teen</a>
     """
-    src, title = _parse_player(html)
-    assert src == "https://hls-cdn/x/hls.m3u8?secure=b"  # HLS приоритетнее
-    assert title == "Cool Clip"
+    m = _parse_player(html)
+    assert m.media_url == "https://hls-cdn/x/hls.m3u8?secure=b"  # HLS приоритетнее
+    assert m.title == "Cool Clip"
+    assert m.uploader == "BlackedRaw"
+    assert m.actors == ["Kali Rose"]
+    assert m.tags == ["anal", "teen"]
+    assert m.thumbnail == "https://thumb/x.jpg"
 
 
 def test_falls_back_to_high_mp4() -> None:
     html = "html5player.setVideoUrlHigh('https://cdn/x/mp4_hd.mp4');"
-    src, title = _parse_player(html)
-    assert src == "https://cdn/x/mp4_hd.mp4"
-    assert title is None
+    m = _parse_player(html)
+    assert m.media_url == "https://cdn/x/mp4_hd.mp4"
+    assert m.title is None
 
 
 def test_no_source() -> None:

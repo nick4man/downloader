@@ -19,6 +19,23 @@ from downloader.tools import aria2, ffmpeg, http_downloader, ytdlp
 _PERSIST_INTERVAL = 1.0  # как часто сбрасывать bytes_done в БД, сек
 
 
+def _media_tags(media: sites.SiteMedia | None) -> dict[str, str]:
+    """Маппинг метаданных страницы в теги MP4 (для --postprocessor-args)."""
+    if media is None:
+        return {}
+    tags: dict[str, str] = {}
+    # Актёры → artist; студия/аплоадер → album_artist + album.
+    if media.actors:
+        tags["artist"] = ", ".join(media.actors)
+    if media.uploader:
+        tags["album_artist"] = media.uploader
+        tags["album"] = media.uploader
+        tags.setdefault("artist", media.uploader)  # нет актёров — пусть будет канал
+    if media.tags:
+        tags["genre"] = ", ".join(media.tags)
+    return tags
+
+
 async def run_job(
     conn: aiosqlite.Connection,
     job: DownloadJob,
@@ -58,10 +75,10 @@ async def run_job(
     try:
         if job.engine is Engine.YTDLP:
             # Сайт-плагин: для поддерживаемых сайтов достаём реальный источник
-            # (HLS-мастер → топ-качество) и заголовок; иначе качаем как есть.
-            resolved = await sites.resolve_source(job.url)
-            src = resolved[0] if resolved else job.url
-            title = resolved[1] if resolved else None
+            # (HLS-мастер → топ-качество) и метаданные; иначе качаем как есть.
+            media = await sites.resolve_source(job.url)
+            src = media.media_url if media else job.url
+            title = media.title if media else None
             # Имя: приоритет у пользовательского (rename), иначе заголовок страницы.
             # Проставляем сразу, чтобы dl list/морда показывали его уже во время закачки.
             if not job.filename and title:
@@ -77,10 +94,14 @@ async def run_job(
                 cookies=cookies,
                 audio=job.audio,
                 meta_title=title,  # title из resolve_source — перетирает «hls»
+                metadata=_media_tags(media),
             )
             result = dl.path
             job.source_id = dl.source_id  # для дедупа по идентичности источника
             job.height = dl.height
+            # Обложка отдельным пассом (у m3u8 нет thumbnail для --embed-thumbnail).
+            if result and media and media.thumbnail:
+                await ffmpeg.embed_cover(result, media.thumbnail)
         elif job.engine is Engine.FFMPEG:
             result = await ffmpeg.hls_to_mp4(
                 job.url,

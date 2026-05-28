@@ -184,6 +184,7 @@ async def download(
     cookies: str | None = None,
     audio: bool = False,
     meta_title: str | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> DownloadResult:
     """Скачать медиа через yt-dlp с выбранным форматом и метаданными.
 
@@ -204,12 +205,17 @@ async def download(
         ffmpeg_loc = ["--ffmpeg-location", str(Path(resolve_binary("ffmpeg")).parent)]
     # Аудио: извлекаем дорожку через ffmpeg (-x) в mp3; иначе — видео по -f.
     fmt_args = ["-x", "--audio-format", "mp3", "-f", "bestaudio/best"] if audio else ["-f", fmt]
-    # Перетираем title (если задан) и обнуляем comment: из info_dict сырого m3u8
-    # иначе попадает «hls» и временный CDN-URL с токеном.
-    embed_parts: list[str] = []
+    # Пишем теги в файл через ffmpeg-постпроцессор: из info_dict сырого m3u8
+    # иначе попадает «hls» в title и CDN-URL в comment, а актёры/студия/теги/год
+    # вообще отсутствуют (их даёт HTML-парсер, см. sites.resolve_source).
+    tags: dict[str, str] = {"comment": ""}  # обнуляем CDN-URL
     if meta_title:
-        embed_parts += ["-metadata", f"title={meta_title}"]
-    embed_parts += ["-metadata", "comment="]
+        tags["title"] = meta_title
+    if metadata:
+        tags.update({k: v for k, v in metadata.items() if v})
+    embed_parts: list[str] = []
+    for key, value in tags.items():
+        embed_parts += ["-metadata", f"{key}={value}"]
     pp_args = [
         "--postprocessor-args",
         "EmbedMetadata:" + " ".join(shlex.quote(p) for p in embed_parts),
