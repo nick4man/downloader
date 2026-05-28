@@ -2,118 +2,393 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0f1115">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#1A1814">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
-  <title>downloader</title>
+  <title>DOWNLOADER · operator panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #0f1115; --surface: #181b21; --surface2: #1f232b; --border: #2a2f38;
-      --text: #e8eaed; --muted: #8b929e; --accent: #3b82f6; --accent-h: #2f6fe0;
-      --ok: #16a34a; --warn: #b45309; --err: #dc2626;
+      --paper: #F4EDE0;
+      --paper2: #EAE2D2;
+      --paper3: #FBF7EE;
+      --hairline: #C9C0AF;
+      --ink: #1A1814;
+      --mute: #6F665B;
+      --line: #2A2722;
+      --amber: #C97E0F;
+      --amber-soft: #F2D8A3;
+      --red: #A92E1A;
+      --ok: #2F7A3F;
+      --grip: rgba(26,24,20,.28);
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text);
-      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-    .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px 40px; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--paper);
+      background-image: radial-gradient(circle, var(--hairline) 1px, transparent 1.5px);
+      background-size: 14px 14px;
+      color: var(--ink);
+      font-family: "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-size: 14px;
+      line-height: 1.45;
+      font-feature-settings: "tnum";
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* paper grain */
+    body::before {
+      content: "";
+      position: fixed; inset: 0; pointer-events: none; z-index: 1;
+      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/></svg>");
+      opacity: 0.06; mix-blend-mode: multiply;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 60px; position: relative; z-index: 2; }
 
-    header { position: sticky; top: 0; z-index: 5; background: rgba(15,17,21,.92);
-      backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
-    .bar { max-width: 980px; margin: 0 auto; padding: 12px 16px;
-      display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .brand { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
-    .grow { flex: 1 1 240px; }
-    input, button, select { font: inherit; }
-    input[type=text], input#url, input#quality, input#dir, .fld {
-      padding: 9px 11px; border-radius: 9px; border: 1px solid var(--border);
-      background: var(--bg); color: var(--text); outline: none; }
-    input:focus { border-color: var(--accent); }
-    input#quality { width: 84px; } input#dir { width: 150px; }
-    .chk { display: flex; align-items: center; gap: 6px; color: var(--muted);
-      white-space: nowrap; user-select: none; }
-    button { padding: 9px 14px; border: 0; border-radius: 9px; background: var(--accent);
-      color: #fff; cursor: pointer; font-weight: 600; }
-    button:hover { background: var(--accent-h); }
-    button.ghost { background: var(--surface2); color: var(--text); font-weight: 500; }
-    button.ghost:hover { background: var(--border); }
+    /* TOPBAR */
+    .topbar {
+      background: var(--ink); color: var(--paper);
+      position: sticky; top: 0; z-index: 10;
+      border-bottom: 1px solid #000;
+    }
+    .topinner {
+      max-width: 1080px; margin: 0 auto; padding: 14px 24px;
+      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: baseline; gap: 12px; }
+    .brand .name {
+      font-weight: 700; font-size: 18px; letter-spacing: -0.01em;
+      text-transform: uppercase;
+    }
+    .brand .sub {
+      font-weight: 400; font-size: 11px; color: rgba(244,237,224,.5);
+      text-transform: uppercase; letter-spacing: 0.1em;
+    }
+    .counts { display: flex; gap: 20px; margin-left: auto; }
+    .counts span {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+      color: rgba(244,237,224,.65);
+      display: inline-flex; align-items: baseline; gap: 6px;
+    }
+    .counts b { font-size: 14px; font-weight: 700; color: var(--paper); font-feature-settings: "tnum"; }
+    .counts span[data-state="running"] b { color: var(--amber); }
+    .counts span[data-state="error"] b { color: #ff8a73; }
+    .counts span[data-state="completed"] b { color: #9dd9a9; }
 
-    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-      padding: 16px; margin: 16px 0; }
-    .panel h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; }
-    .grid { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
-    .grid label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 5px; }
+    /* INTAKE */
+    .intake {
+      display: grid;
+      grid-template-columns: 1fr 110px 88px 220px auto auto;
+      gap: 1px;
+      background: var(--line);
+      margin: 24px 0 0;
+      border: 1px solid var(--line);
+    }
+    .field {
+      background: var(--paper);
+      padding: 10px 14px;
+      display: flex; flex-direction: column; gap: 6px;
+      min-width: 0;
+    }
+    .field label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--mute); font-weight: 500;
+    }
+    .field input[type="text"], .field input[type="number"] {
+      border: 0; background: transparent; color: var(--ink);
+      font: 500 14px "JetBrains Mono", monospace;
+      outline: none; padding: 2px 0;
+      width: 100%;
+    }
+    .field input::placeholder { color: var(--mute); opacity: 0.55; }
+    .field.f-a { align-items: flex-start; justify-content: space-between; }
+    .switch { display: inline-flex; align-items: center; }
+    .switch input {
+      appearance: none; -webkit-appearance: none;
+      width: 36px; height: 18px;
+      background: var(--paper2); border: 1px solid var(--line);
+      position: relative; cursor: pointer; margin: 0;
+    }
+    .switch input:checked { background: var(--amber); border-color: var(--amber); }
+    .switch input::after {
+      content: ""; position: absolute; top: 1px; left: 1px;
+      width: 14px; height: 14px; background: var(--ink);
+      transition: transform 0.15s ease;
+    }
+    .switch input:checked::after { transform: translateX(18px); background: var(--paper); }
 
-    #list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
-    .job { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
-      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
-    .job:hover { border-color: #38404c; }
-    .grip { color: #5b626d; cursor: grab; font-size: 16px; flex: 0 0 auto; }
-    .meta { flex: 1 1 auto; min-width: 0; }
-    .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .progress { flex: 0 0 200px; }
-    .track { height: 7px; border-radius: 4px; background: var(--surface2); overflow: hidden; }
-    .fill { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
-    .pinfo { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; }
-    .pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; flex: 0 0 auto; }
-    .queued { background: #1e3a5f; color: #9cc4ff; } .running { background: #3a3000; color: #f4d35e; }
-    .paused { background: #2d3340; color: #aab3c0; } .completed { background: #0f3d24; color: #6ee7a0; }
-    .error { background: #4a1414; color: #ff9a9a; } .canceled { background: #2d3340; color: #8b929e; }
-    .acts { display: flex; gap: 2px; flex: 0 0 auto; }
-    .act { background: none; color: var(--muted); padding: 5px 7px; font-size: 14px; font-weight: 400; border-radius: 7px; }
-    .act:hover { color: var(--text); background: var(--surface2); }
-    .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+    .btn {
+      border: 0; cursor: pointer;
+      font: 700 12px "JetBrains Mono", monospace;
+      text-transform: uppercase; letter-spacing: 0.12em;
+      padding: 0 22px;
+    }
+    .btn-engage { background: var(--ink); color: var(--paper); }
+    .btn-engage:hover { background: var(--amber); color: var(--ink); }
+    .btn-ghost { background: var(--paper2); color: var(--ink); }
+    .btn-ghost:hover { background: var(--paper3); }
 
-    footer { color: var(--muted); font-size: 12px; margin-top: 28px;
-      border-top: 1px solid var(--border); padding-top: 16px; }
-    footer a { color: var(--accent); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
-    .frow { margin-top: 8px; }
+    /* CONFIG */
+    .config {
+      background: var(--paper2);
+      border: 1px solid var(--line);
+      border-top: 0;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr 120px 120px auto auto;
+      gap: 14px;
+      align-items: end;
+    }
+    .config h3 {
+      grid-column: 1 / -1;
+      margin: 0 0 4px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--mute); font-weight: 500;
+    }
+    .config label {
+      display: flex; flex-direction: column; gap: 5px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--mute);
+    }
+    .config input {
+      border: 1px solid var(--line); background: var(--paper);
+      padding: 8px 10px;
+      font: 500 13px "JetBrains Mono", monospace;
+      color: var(--ink); outline: none;
+    }
+    .config input:focus { background: #fff; }
+    .config .btn { padding: 10px 16px; }
+    #s-msg {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--ok);
+    }
 
-    @media (max-width: 640px) {
-      .progress { flex-basis: 110px; } .sub { display: none; }
-      input#dir { display: none; }
+    /* JOB LIST */
+    #list { margin-top: 28px; }
+    .job {
+      display: grid;
+      grid-template-columns: 24px 56px 1fr 230px 64px auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--paper);
+      border: 1px solid var(--hairline);
+      border-bottom: none;
+      transition: background 0.15s;
+    }
+    .job:last-child { border-bottom: 1px solid var(--hairline); }
+    .job:hover { background: var(--paper3); }
+    .grip {
+      color: var(--grip); font-size: 18px; cursor: grab;
+      user-select: none; text-align: center; line-height: 1;
+    }
+    .grip:active { cursor: grabbing; }
+    .seq {
+      font-weight: 700; font-size: 11px;
+      color: var(--mute);
+      letter-spacing: 0.04em;
+      font-feature-settings: "tnum";
+    }
+    .meta { min-width: 0; }
+    .name {
+      font-size: 14px; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .url {
+      font-size: 11px; color: var(--mute);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .progress { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .track {
+      height: 10px; background: var(--paper2);
+      border: 1px solid var(--line);
+      position: relative; overflow: hidden;
+    }
+    .fill {
+      height: 100%;
+      background: var(--ink);
+      width: 0;
+      transition: width 0.4s ease;
+      position: relative;
+    }
+    .job[data-state="running"] .fill { background: var(--amber); }
+    .job[data-state="completed"] .fill { background: var(--ok); }
+    .job[data-state="error"] .fill { background: var(--red); }
+    .job[data-state="running"] .fill::after {
+      content: ""; position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        -45deg, transparent 0 6px, rgba(26,24,20,.18) 6px 12px
+      );
+      animation: tape 0.8s linear infinite;
+    }
+    @keyframes tape {
+      from { background-position: 0 0; }
+      to { background-position: 17px 0; }
+    }
+    .pstats {
+      font-size: 11px; color: var(--mute);
+      letter-spacing: 0.02em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-feature-settings: "tnum";
+    }
+
+    .stamp {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      text-transform: uppercase;
+      text-align: center; line-height: 1;
+    }
+    .job[data-state="queued"] .stamp { color: var(--ink); }
+    .job[data-state="running"] .stamp { background: var(--amber); color: var(--ink); border-color: var(--amber); }
+    .job[data-state="completed"] .stamp { background: var(--ok); color: var(--paper); border-color: var(--ok); }
+    .job[data-state="error"] .stamp { background: var(--red); color: var(--paper); border-color: var(--red); }
+    .job[data-state="paused"] .stamp {
+      background: repeating-linear-gradient(-45deg, var(--paper2) 0 4px, var(--paper) 4px 8px);
+      color: var(--mute);
+    }
+    .job[data-state="canceled"] .stamp { background: var(--paper2); color: var(--mute); }
+
+    .acts { display: flex; gap: 1px; }
+    .act {
+      border: 1px solid var(--hairline);
+      background: var(--paper);
+      color: var(--mute);
+      cursor: pointer;
+      font: 12px "JetBrains Mono", monospace;
+      width: 28px; height: 28px;
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0; line-height: 1;
+    }
+    .act:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    .act.danger:hover { background: var(--red); color: var(--paper); border-color: var(--red); }
+
+    .empty {
+      padding: 70px 20px;
+      text-align: center;
+      color: var(--mute);
+      font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+      border: 1px dashed var(--hairline);
+      margin-top: 28px;
+    }
+
+    /* FOOTER */
+    footer {
+      margin-top: 40px; padding-top: 18px;
+      border-top: 2px solid var(--line);
+      color: var(--mute);
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    footer .tag {
+      display: inline-block;
+      text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--ink); font-weight: 700; margin-right: 8px;
+    }
+    footer a {
+      color: var(--ink); border-bottom: 1px solid currentColor;
+      text-decoration: none; padding-bottom: 1px;
+    }
+    footer a:hover { color: var(--amber); }
+    .frow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    #cookies { font: 11px "JetBrains Mono", monospace; color: var(--ink); }
+    #cookies-status {
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.12em; color: var(--mute);
+    }
+
+    @media (max-width: 720px) {
+      .topinner { gap: 12px; padding: 12px 16px; }
+      .counts { gap: 12px; }
+      .counts b { font-size: 13px; }
+      .wrap { padding: 0 14px 40px; }
+      .intake { grid-template-columns: 1fr 1fr; }
+      .intake .btn { grid-column: 1 / -1; padding: 12px; }
+      .config { grid-template-columns: 1fr 1fr; }
+      .job {
+        grid-template-columns: 24px 1fr auto;
+        grid-template-areas:
+          "grip meta stamp"
+          "seq  progress progress"
+          "acts acts acts";
+        column-gap: 12px; row-gap: 10px;
+        padding: 12px 14px;
+      }
+      .grip { grid-area: grip; align-self: start; }
+      .seq { grid-area: seq; align-self: center; }
+      .meta { grid-area: meta; }
+      .progress { grid-area: progress; }
+      .stamp { grid-area: stamp; align-self: start; }
+      .acts { grid-area: acts; flex-wrap: wrap; }
+      .url { display: none; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <div class="bar">
-      <span class="brand">⬇ downloader</span>
-      <input id="url" class="grow" type="text" placeholder="Вставь ссылку…" autofocus>
-      <input id="quality" type="number" placeholder="кач-во" title="макс. высота, напр. 1080">
-      <label class="chk"><input type="checkbox" id="audio"> аудио</label>
-      <input id="dir" type="text" placeholder="каталог (опц.)">
-      <button onclick="addJob()">Добавить</button>
-      <button class="ghost" onclick="toggleSettings()" title="Настройки">⚙</button>
+  <header class="topbar">
+    <div class="topinner">
+      <div class="brand">
+        <span class="name">▼ DOWNLOADER</span>
+        <span class="sub">/ operator panel</span>
+      </div>
+      <div class="counts">
+        <span data-state="queued">QUEUE <b id="c-queued">0</b></span>
+        <span data-state="running">RUN <b id="c-running">0</b></span>
+        <span data-state="completed">DONE <b id="c-completed">0</b></span>
+        <span data-state="error">ERR <b id="c-error">0</b></span>
+      </div>
     </div>
   </header>
 
   <div class="wrap">
-    <section id="settings" class="panel" hidden>
-      <h3>Настройки</h3>
-      <div class="grid">
-        <label>Каталог по умолчанию<input id="s-dir" class="fld" style="width:260px"></label>
-        <label>Качество<input id="s-quality" class="fld" type="number" style="width:90px"></label>
-        <label>Параллельно<input id="s-concurrent" class="fld" type="number" style="width:90px"></label>
-        <button onclick="saveSettings()">Сохранить</button>
-        <span id="s-msg" style="color:var(--ok)"></span>
+    <section class="intake">
+      <div class="field">
+        <label>ССЫЛКА</label>
+        <input id="url" type="text" placeholder="paste link…" autocomplete="off" autofocus>
       </div>
+      <div class="field">
+        <label>КАЧЕСТВО</label>
+        <input id="quality" type="number" placeholder="1080">
+      </div>
+      <div class="field f-a">
+        <label>АУДИО</label>
+        <label class="switch"><input type="checkbox" id="audio"></label>
+      </div>
+      <div class="field">
+        <label>КАТАЛОГ</label>
+        <input id="dir" type="text" placeholder="/auto">
+      </div>
+      <button class="btn btn-engage" onclick="addJob()">В ОЧЕРЕДЬ ▶</button>
+      <button class="btn btn-ghost" onclick="toggleSettings()">CONFIG</button>
     </section>
 
-    <div id="list"></div>
-    <div id="empty" class="empty" hidden>Очередь пуста. Вставь ссылку выше — или поделись с телефона.</div>
+    <section id="settings" class="config" hidden>
+      <h3>// настройки</h3>
+      <label>КАТАЛОГ ПО УМОЛЧАНИЮ<input id="s-dir"></label>
+      <label>КАЧЕСТВО<input id="s-quality" type="number"></label>
+      <label>ПАРАЛЛЕЛЬНО<input id="s-concurrent" type="number"></label>
+      <button class="btn btn-engage" onclick="saveSettings()">СОХРАНИТЬ</button>
+      <span id="s-msg"></span>
+    </section>
+
+    <section id="list"></section>
+    <div id="empty" class="empty" hidden>// очередь пуста · вставь ссылку выше</div>
 
     <footer>
-      <div>
-        📎 <a id="blet" href="#">В downloader</a> — перетащи на панель закладок.
-        Ещё: <a href="https://github.com/nick4man/downloader/tree/main/extension">расширение</a>,
-        <a href="https://github.com/nick4man/downloader/blob/main/IOS.md">iOS-ярлык</a>.
+      <div class="frow">
+        <span class="tag">OUT</span>
+        📎 <a id="blet" href="#">букмарклет</a>
+        <a href="https://github.com/nick4man/downloader/tree/main/extension">расширение</a>
+        <a href="https://github.com/nick4man/downloader/blob/main/IOS.md">iOS-ярлык</a>
       </div>
       <div class="frow">
-        🍪 Cookies (приватное / age-gate):
+        <span class="tag">COOKIES</span>
         <input type="file" id="cookies" accept=".txt">
         <span id="cookies-status"></span>
       </div>
@@ -122,50 +397,52 @@
 
   <script>
     const fmt = n => {
-      if (!n) return "0 Б";
-      const u = ["Б", "КиБ", "МиБ", "ГиБ", "ТиБ"]; let i = 0;
+      if (!n) return "0 B";
+      const u = ["B", "KiB", "MiB", "GiB", "TiB"]; let i = 0;
       while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
       return n.toFixed(i ? 1 : 0) + " " + u[i];
     };
-    const esc = s => (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-    function progressInfo(j) {
-      const parts = [];
-      if (j.bytes_total) parts.push(`${fmt(j.bytes_done)} / ${fmt(j.bytes_total)}`);
-      else if (j.bytes_done) parts.push(fmt(j.bytes_done));
-      if (j.speed) parts.push(fmt(j.speed) + "/с");
-      if (j.eta) parts.push("≈" + Math.round(j.eta) + "с");
-      return parts.join(" · ");
-    }
+    const esc = s => (s || "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const STAMPS = { queued: "QUEUE", running: "RUN", paused: "PAUSE", completed: "DONE", error: "ERR", canceled: "CXL" };
 
     function render(jobs) {
       if (window.__dragging) return;
+      const counts = { queued: 0, running: 0, completed: 0, error: 0, paused: 0, canceled: 0 };
+      jobs.forEach(j => { counts[j.state] = (counts[j.state] || 0) + 1; });
+      ["queued","running","completed","error"].forEach(s => {
+        document.getElementById("c-" + s).textContent = counts[s] || 0;
+      });
       document.getElementById("empty").hidden = jobs.length > 0;
-      document.getElementById("list").innerHTML = jobs.map(j => {
-        const pct = j.bytes_total ? Math.min(100, Math.round(100 * j.bytes_done / j.bytes_total)) : 0;
-        const done = j.state === "completed";
-        const showBar = j.state === "running" || done;
-        const bar = showBar
-          ? `<div class="track"><div class="fill" style="width:${done ? 100 : pct}%;background:${done ? "var(--ok)" : "var(--accent)"}"></div></div>
-             <div class="pinfo">${done ? "✓ " + fmt(j.bytes_total || j.bytes_done) : (pct + "% · " + progressInfo(j))}</div>`
-          : `<div class="pinfo">—</div>`;
+      document.getElementById("list").innerHTML = jobs.map((j, i) => {
+        const pct = j.bytes_total ? Math.min(100, Math.round(100 * j.bytes_done / j.bytes_total))
+                                  : (j.state === "completed" ? 100 : 0);
+        const stats = [];
+        if (j.bytes_total) stats.push(fmt(j.bytes_done) + " / " + fmt(j.bytes_total));
+        else if (j.bytes_done) stats.push(fmt(j.bytes_done));
+        if (j.speed) stats.push(fmt(j.speed) + "/s");
+        if (j.eta) stats.push("ETA " + Math.round(j.eta) + "s");
         const canPause = j.state === "queued" || j.state === "running";
         const canResume = j.state === "paused" || j.state === "error";
-        return `<div class="job" draggable="true" data-id="${j.id}">
-          <span class="grip" title="Перетащить">⠿</span>
+        const seq = "#" + String(i + 1).padStart(3, "0");
+        return `<div class="job" data-id="${j.id}" data-state="${j.state}" draggable="true">
+          <span class="grip" title="перетащить">≡</span>
+          <span class="seq">${seq}</span>
           <div class="meta">
-            <div class="title">${j.audio ? "🎵 " : ""}${esc(j.filename) || "—"}</div>
-            <div class="sub">${esc(j.url)}</div>
+            <div class="name">${j.audio ? "♪ " : ""}${esc(j.filename) || "—"}</div>
+            <div class="url">${esc(j.url)}</div>
           </div>
-          <div class="progress">${bar}</div>
-          <span class="pill ${j.state}">${j.state}</span>
+          <div class="progress">
+            <div class="track"><div class="fill" style="width:${pct}%"></div></div>
+            <div class="pstats">${stats.join(" · ") || "—"}</div>
+          </div>
+          <span class="stamp">${STAMPS[j.state] || j.state.toUpperCase()}</span>
           <div class="acts">
-            <button class="act" onclick="move('${j.id}','up')" title="Выше">↑</button>
-            <button class="act" onclick="move('${j.id}','down')" title="Ниже">↓</button>
-            ${canPause ? `<button class="act" onclick="act('${j.id}','pause')" title="Пауза">⏸</button>` : ""}
-            ${canResume ? `<button class="act" onclick="act('${j.id}','resume')" title="Возобновить">▶</button>` : ""}
-            <button class="act" onclick="rename('${j.id}')" title="Переименовать">✏</button>
-            <button class="act" onclick="rm('${j.id}')" title="Удалить">🗑</button>
+            <button class="act" onclick="move('${j.id}','up')" title="выше">↑</button>
+            <button class="act" onclick="move('${j.id}','down')" title="ниже">↓</button>
+            ${canPause ? `<button class="act" onclick="act('${j.id}','pause')" title="пауза">⏸</button>` : ""}
+            ${canResume ? `<button class="act" onclick="act('${j.id}','resume')" title="возобновить">▶</button>` : ""}
+            <button class="act" onclick="rename('${j.id}')" title="переименовать">✎</button>
+            <button class="act danger" onclick="rm('${j.id}')" title="удалить">×</button>
           </div>
         </div>`;
       }).join("");
@@ -178,8 +455,7 @@
       await fetch("/jobs", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          url,
-          quality: q ? +q : null,
+          url, quality: q ? +q : null,
           audio: document.getElementById("audio").checked,
           dir: document.getElementById("dir").value.trim() || null,
         }),
@@ -208,7 +484,7 @@
         }),
       });
       const m = document.getElementById("s-msg");
-      m.textContent = "✓ сохранено (пул — после restart)";
+      m.textContent = "✓ saved · pool applies after restart";
       setTimeout(() => (m.textContent = ""), 2500);
     }
 
@@ -222,7 +498,7 @@
     }
     async function rm(id) { await fetch(`/jobs/${id}`, { method: "DELETE" }); refresh(); }
     async function rename(id) {
-      const name = prompt("Новое имя файла:");
+      const name = prompt("новое имя файла:");
       if (!name) return;
       await fetch(`/jobs/${id}/rename`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -239,7 +515,7 @@
       } catch {}
     }
     function askToken() {
-      const t = prompt("Токен доступа (DOWNLOADER_TOKEN):");
+      const t = prompt("токен доступа (DOWNLOADER_TOKEN):");
       if (t) location.search = "?token=" + encodeURIComponent(t);
     }
     function connectWS() {
@@ -250,7 +526,7 @@
       ws.onerror = () => ws.close();
     }
 
-    // Букмарклет (с токеном из cookie, если включена аутентификация).
+    // bookmarklet
     const ck = (document.cookie.match(/(?:^|; )dl_token=([^;]+)/) || [])[1];
     const tok = ck ? decodeURIComponent(ck) : "";
     const headers = tok
@@ -260,18 +536,22 @@
       "javascript:(function(){fetch('" + location.origin +
       "/jobs',{method:'POST',headers:" + headers +
       ",body:JSON.stringify({url:location.href})}).then(function(r){" +
-      "alert(r.ok?'Отправлено в downloader':'Ошибка '+r.status)})" +
-      ".catch(function(e){alert('Не удалось: '+e)})})();";
+      "alert(r.ok?'sent to downloader':'error '+r.status)})" +
+      ".catch(function(e){alert('failed: '+e)})})();";
 
-    // Drag-and-drop сортировка (порядок шлём целиком на /jobs/reorder).
+    // DnD
     const listEl = document.getElementById("list");
     let draggedId = null;
     listEl.addEventListener("dragstart", e => {
       const card = e.target.closest(".job");
-      if (card) { draggedId = card.dataset.id; window.__dragging = true; }
+      if (card) { draggedId = card.dataset.id; window.__dragging = true; card.style.opacity = "0.5"; }
     });
     listEl.addEventListener("dragover", e => e.preventDefault());
-    listEl.addEventListener("dragend", () => { window.__dragging = false; });
+    listEl.addEventListener("dragend", e => {
+      window.__dragging = false;
+      const card = e.target.closest(".job");
+      if (card) card.style.opacity = "";
+    });
     listEl.addEventListener("drop", async e => {
       e.preventDefault();
       window.__dragging = false;
@@ -289,12 +569,11 @@
 
     document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") addJob(); });
 
-    // Cookies: статус + загрузка.
     async function refreshCookies() {
       try {
         const s = await (await fetch("/cookies")).json();
         document.getElementById("cookies-status").textContent =
-          s.present ? `загружены (${fmt(s.bytes)})` : "не загружены";
+          s.present ? `loaded · ${fmt(s.bytes)}` : "not loaded";
       } catch {}
     }
     document.getElementById("cookies").addEventListener("change", async e => {
